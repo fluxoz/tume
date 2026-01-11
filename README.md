@@ -124,14 +124,31 @@ The compose view allows you to write new emails with vim-style modal editing.
 
 The body field supports markdown with rich terminal preview rendering (powered by `tui-markdown`):
 - **Headings**: `## Heading` - rendered with styling
-- **Bold**: `**bold text**` - rendered in bold
-- **Italic**: `_italic text_` - rendered in italics  
+- **Bold**: `**bold text**` (must have closing `**`) - rendered in bold
+- **Italic**: `_italic text_` (must have closing `_`) - rendered in italics  
 - **Code**: `` `inline code` `` - rendered with code styling
 - **Code blocks**: ` ``` code block ``` ` - rendered in code block format
 - **Lists**: `- list item` - rendered with bullets
 - And more markdown features with proper terminal styling
 
+**Important**: Markdown syntax must be complete for rendering. For example, `**text**` (with both opening and closing) will render as bold, but `** text` or `**text` without closing tags will display as plain text.
+
 Press `p` in Normal mode to toggle between raw markdown and rendered preview.
+
+**Example:**
+```
+Raw markdown:
+## Meeting Notes
+**Important:** Review by Friday
+- First item
+- Second item
+
+Preview will show:
+Styled heading "Meeting Notes"
+"Important:" in bold, followed by " Review by Friday"
+• First item
+• Second item
+```
 
 ## Architecture
 
