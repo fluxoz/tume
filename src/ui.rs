@@ -1,13 +1,39 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame,
 };
-use pulldown_cmark::{Parser, Event as MarkdownEvent, Tag};
+use tui_markdown::from_str;
 
 use crate::app::{App, View, ComposeMode, ComposeField};
+
+// Helper function to convert ratatui_core::Color to ratatui::Color
+fn convert_color(core_color: ratatui_core::style::Color) -> Color {
+    use ratatui_core::style::Color as CoreColor;
+    match core_color {
+        CoreColor::Reset => Color::Reset,
+        CoreColor::Black => Color::Black,
+        CoreColor::Red => Color::Red,
+        CoreColor::Green => Color::Green,
+        CoreColor::Yellow => Color::Yellow,
+        CoreColor::Blue => Color::Blue,
+        CoreColor::Magenta => Color::Magenta,
+        CoreColor::Cyan => Color::Cyan,
+        CoreColor::Gray => Color::Gray,
+        CoreColor::DarkGray => Color::DarkGray,
+        CoreColor::LightRed => Color::LightRed,
+        CoreColor::LightGreen => Color::LightGreen,
+        CoreColor::LightYellow => Color::LightYellow,
+        CoreColor::LightBlue => Color::LightBlue,
+        CoreColor::LightMagenta => Color::LightMagenta,
+        CoreColor::LightCyan => Color::LightCyan,
+        CoreColor::White => Color::White,
+        CoreColor::Rgb(r, g, b) => Color::Rgb(r, g, b),
+        CoreColor::Indexed(i) => Color::Indexed(i),
+    }
+}
 
 pub fn draw(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
@@ -133,7 +159,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
         View::Compose => {
             if let Some(ref compose) = app.compose_state {
                 match compose.mode {
-                    ComposeMode::Normal => "i: Insert | j/k: Navigate fields | p: Preview | Esc/q: Exit",
+                    ComposeMode::Normal => "i: Insert | j/k: Navigate fields | d: Clear field | p: Preview | Esc/q: Exit",
                     ComposeMode::Insert => "Esc: Normal mode | Type to edit field",
                 }
             } else {
@@ -252,84 +278,58 @@ fn render_compose(f: &mut Frame, area: Rect, app: &App) {
             }
         };
         
-        let body_text = if compose.show_preview {
-            markdown_to_text(&compose.body)
-        } else if compose.body.is_empty() && compose.current_field != ComposeField::Body {
-            "<empty>".to_string()
+        if compose.show_preview && !compose.body.is_empty() {
+            // Render markdown using tui-markdown
+            let markdown_core_text = from_str(&compose.body);
+            // Convert ratatui_core::Text to ratatui::Text by rebuilding from lines
+            let mut lines: Vec<Line> = Vec::new();
+            for core_line in markdown_core_text.lines {
+                let mut spans: Vec<Span> = Vec::new();
+                for core_span in core_line.spans {
+                    // Convert style from ratatui_core to ratatui
+                    let mut style = Style::default();
+                    if let Some(fg) = core_span.style.fg {
+                        style = style.fg(convert_color(fg));
+                    }
+                    if let Some(bg) = core_span.style.bg {
+                        style = style.bg(convert_color(bg));
+                    }
+                    // Convert modifiers
+                    if core_span.style.add_modifier.contains(ratatui_core::style::Modifier::BOLD) {
+                        style = style.add_modifier(Modifier::BOLD);
+                    }
+                    if core_span.style.add_modifier.contains(ratatui_core::style::Modifier::ITALIC) {
+                        style = style.add_modifier(Modifier::ITALIC);
+                    }
+                    if core_span.style.add_modifier.contains(ratatui_core::style::Modifier::UNDERLINED) {
+                        style = style.add_modifier(Modifier::UNDERLINED);
+                    }
+                    
+                    spans.push(Span::styled(
+                        core_span.content.to_string(),
+                        style,
+                    ));
+                }
+                lines.push(Line::from(spans));
+            }
+            let markdown_text = Text::from(lines);
+            
+            let body_widget = Paragraph::new(markdown_text)
+                .block(Block::default().borders(Borders::ALL).title(body_title))
+                .wrap(Wrap { trim: false });
+            f.render_widget(body_widget, chunks[2]);
         } else {
-            compose.body.clone()
-        };
-        
-        let body_widget = Paragraph::new(body_text)
-            .block(Block::default().borders(Borders::ALL).title(body_title))
-            .wrap(Wrap { trim: false });
-        f.render_widget(body_widget, chunks[2]);
-    }
-}
-
-fn markdown_to_text(markdown: &str) -> String {
-    let parser = Parser::new(markdown);
-    let mut result = String::new();
-    
-    for event in parser {
-        match event {
-            MarkdownEvent::Start(Tag::Heading(..)) => {
-                result.push_str("## ");
-            }
-            MarkdownEvent::End(Tag::Heading(..)) => {
-                result.push('\n');
-            }
-            MarkdownEvent::Start(Tag::Emphasis) => {
-                result.push('_');
-            }
-            MarkdownEvent::End(Tag::Emphasis) => {
-                result.push('_');
-            }
-            MarkdownEvent::Start(Tag::Strong) => {
-                result.push_str("**");
-            }
-            MarkdownEvent::End(Tag::Strong) => {
-                result.push_str("**");
-            }
-            MarkdownEvent::Start(Tag::CodeBlock(_)) => {
-                result.push_str("\n```\n");
-            }
-            MarkdownEvent::End(Tag::CodeBlock(_)) => {
-                result.push_str("\n```\n");
-            }
-            MarkdownEvent::Code(text) => {
-                result.push('`');
-                result.push_str(&text);
-                result.push('`');
-            }
-            MarkdownEvent::Text(text) => {
-                result.push_str(&text);
-            }
-            MarkdownEvent::SoftBreak => {
-                result.push(' ');
-            }
-            MarkdownEvent::HardBreak => {
-                result.push('\n');
-            }
-            MarkdownEvent::Start(Tag::Paragraph) => {}
-            MarkdownEvent::End(Tag::Paragraph) => {
-                result.push_str("\n\n");
-            }
-            MarkdownEvent::Start(Tag::List(_)) => {
-                result.push('\n');
-            }
-            MarkdownEvent::End(Tag::List(_)) => {
-                result.push('\n');
-            }
-            MarkdownEvent::Start(Tag::Item) => {
-                result.push_str("• ");
-            }
-            MarkdownEvent::End(Tag::Item) => {
-                result.push('\n');
-            }
-            _ => {}
+            // Render plain text
+            let body_text = if compose.body.is_empty() && compose.current_field != ComposeField::Body {
+                "<empty>".to_string()
+            } else {
+                compose.body.clone()
+            };
+            
+            let body_widget = Paragraph::new(body_text)
+                .block(Block::default().borders(Borders::ALL).title(body_title))
+                .wrap(Wrap { trim: false });
+            f.render_widget(body_widget, chunks[2]);
         }
     }
-    
-    result
 }

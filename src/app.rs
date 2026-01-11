@@ -276,6 +276,18 @@ impl App {
         }
     }
 
+    pub fn compose_clear_field(&mut self) {
+        if let Some(ref mut compose) = self.compose_state {
+            if compose.mode == ComposeMode::Normal {
+                match compose.current_field {
+                    ComposeField::Recipients => compose.recipients.clear(),
+                    ComposeField::Subject => compose.subject.clear(),
+                    ComposeField::Body => compose.body.clear(),
+                }
+            }
+        }
+    }
+
     // Stub methods for GPG and Yubikey hooks
     pub fn compose_encrypt_with_gpg(&mut self) {
         self.status_message = Some("GPG encryption hook (stub)".to_string());
@@ -486,5 +498,37 @@ mod tests {
 
         app.compose_toggle_preview();
         assert_eq!(app.compose_state.as_ref().unwrap().show_preview, false);
+    }
+
+    #[test]
+    fn test_compose_clear_field() {
+        let mut app = App::new();
+        app.enter_compose_mode();
+        app.compose_enter_insert_mode();
+
+        // Add text to recipients
+        app.compose_insert_char('t');
+        app.compose_insert_char('e');
+        app.compose_insert_char('s');
+        app.compose_insert_char('t');
+        assert_eq!(app.compose_state.as_ref().unwrap().recipients, "test");
+
+        // Exit insert mode and clear
+        app.compose_exit_insert_mode();
+        app.compose_previous_field(); // Go back to recipients
+        app.compose_clear_field();
+        assert_eq!(app.compose_state.as_ref().unwrap().recipients, "");
+
+        // Test clearing subject
+        app.compose_next_field(); // Move to subject
+        app.compose_enter_insert_mode();
+        app.compose_insert_char('s');
+        app.compose_insert_char('u');
+        app.compose_insert_char('b');
+        assert_eq!(app.compose_state.as_ref().unwrap().subject, "sub");
+        app.compose_exit_insert_mode();
+        app.compose_previous_field(); // Go back to subject
+        app.compose_clear_field();
+        assert_eq!(app.compose_state.as_ref().unwrap().subject, "");
     }
 }

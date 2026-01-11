@@ -86,6 +86,9 @@ fn handle_compose_normal_keys(app: &mut App, key: KeyEvent) {
         KeyCode::Char('j') | KeyCode::Down => app.compose_next_field(),
         KeyCode::Char('k') | KeyCode::Up => app.compose_previous_field(),
         
+        // Clear current field
+        KeyCode::Char('d') => app.compose_clear_field(),
+        
         // Toggle preview
         KeyCode::Char('p') => app.compose_toggle_preview(),
         
