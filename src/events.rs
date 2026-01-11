@@ -21,6 +21,7 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
     match app.current_view {
         View::InboxList => handle_inbox_keys(app, key),
         View::EmailDetail => handle_detail_keys(app, key),
+        View::Compose => handle_compose_keys(app, key),
     }
 }
 
@@ -60,6 +61,55 @@ fn handle_detail_keys(app: &mut App, key: KeyEvent) {
         
         // Quit
         KeyCode::Char('q') => app.quit(),
+        
+        _ => {}
+    }
+}
+
+fn handle_compose_keys(app: &mut App, key: KeyEvent) {
+    use crate::app::ComposeMode;
+    
+    if let Some(ref compose) = app.compose_state {
+        match compose.mode {
+            ComposeMode::Normal => handle_compose_normal_keys(app, key),
+            ComposeMode::Insert => handle_compose_insert_keys(app, key),
+        }
+    }
+}
+
+fn handle_compose_normal_keys(app: &mut App, key: KeyEvent) {
+    match key.code {
+        // Enter insert mode
+        KeyCode::Char('i') => app.compose_enter_insert_mode(),
+        
+        // Navigation
+        KeyCode::Char('j') | KeyCode::Down => app.compose_next_field(),
+        KeyCode::Char('k') | KeyCode::Up => app.compose_previous_field(),
+        
+        // Toggle preview
+        KeyCode::Char('p') => app.compose_toggle_preview(),
+        
+        // Exit compose mode
+        KeyCode::Esc => app.exit_compose_mode(),
+        KeyCode::Char('q') => app.exit_compose_mode(),
+        
+        _ => {}
+    }
+}
+
+fn handle_compose_insert_keys(app: &mut App, key: KeyEvent) {
+    match key.code {
+        // Exit insert mode
+        KeyCode::Esc => app.compose_exit_insert_mode(),
+        
+        // Text input
+        KeyCode::Char(c) => app.compose_insert_char(c),
+        
+        // Backspace
+        KeyCode::Backspace => app.compose_delete_char(),
+        
+        // Enter (newline for body only)
+        KeyCode::Enter => app.compose_insert_newline(),
         
         _ => {}
     }
