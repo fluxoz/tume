@@ -13,6 +13,30 @@ pub struct Email {
 pub enum View {
     InboxList,
     EmailDetail,
+    Compose,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ComposeMode {
+    Normal,
+    Insert,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ComposeField {
+    Recipients,
+    Subject,
+    Body,
+}
+
+#[derive(Debug, Clone)]
+pub struct ComposeState {
+    pub recipients: String,
+    pub subject: String,
+    pub body: String,
+    pub current_field: ComposeField,
+    pub mode: ComposeMode,
+    pub show_preview: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -42,6 +66,7 @@ pub struct App {
     pub selected_index: usize,
     pub should_quit: bool,
     pub status_message: Option<String>,
+    pub compose_state: Option<ComposeState>,
 }
 
 impl App {
@@ -52,6 +77,7 @@ impl App {
             selected_index: 0,
             should_quit: false,
             status_message: None,
+            compose_state: None,
         }
     }
 
@@ -120,28 +146,143 @@ impl App {
     }
 
     pub fn perform_action(&mut self, action: Action) {
-        if self.emails.is_empty() {
-            return;
-        }
-
-        let email = &self.emails[self.selected_index];
         match action {
             Action::Delete => {
-                self.status_message = Some(format!("Deleted email: {}", email.subject));
+                if !self.emails.is_empty() {
+                    let email = &self.emails[self.selected_index];
+                    self.status_message = Some(format!("Deleted email: {}", email.subject));
+                }
             }
             Action::Archive => {
-                self.status_message = Some(format!("Archived email: {}", email.subject));
+                if !self.emails.is_empty() {
+                    let email = &self.emails[self.selected_index];
+                    self.status_message = Some(format!("Archived email: {}", email.subject));
+                }
             }
             Action::Reply => {
-                self.status_message = Some(format!("Replying to: {}", email.from));
+                if !self.emails.is_empty() {
+                    let email = &self.emails[self.selected_index];
+                    self.status_message = Some(format!("Replying to: {}", email.from));
+                }
             }
             Action::Compose => {
-                self.status_message = Some("Composing new email...".to_string());
+                self.enter_compose_mode();
             }
             Action::Forward => {
-                self.status_message = Some(format!("Forwarding email: {}", email.subject));
+                if !self.emails.is_empty() {
+                    let email = &self.emails[self.selected_index];
+                    self.status_message = Some(format!("Forwarding email: {}", email.subject));
+                }
             }
         }
+    }
+
+    pub fn enter_compose_mode(&mut self) {
+        self.compose_state = Some(ComposeState {
+            recipients: String::new(),
+            subject: String::new(),
+            body: String::new(),
+            current_field: ComposeField::Recipients,
+            mode: ComposeMode::Normal,
+            show_preview: false,
+        });
+        self.current_view = View::Compose;
+    }
+
+    pub fn exit_compose_mode(&mut self) {
+        self.compose_state = None;
+        self.current_view = View::InboxList;
+    }
+
+    pub fn compose_next_field(&mut self) {
+        if let Some(ref mut compose) = self.compose_state {
+            if compose.mode == ComposeMode::Normal {
+                compose.current_field = match compose.current_field {
+                    ComposeField::Recipients => ComposeField::Subject,
+                    ComposeField::Subject => ComposeField::Body,
+                    ComposeField::Body => ComposeField::Recipients,
+                };
+            }
+        }
+    }
+
+    pub fn compose_previous_field(&mut self) {
+        if let Some(ref mut compose) = self.compose_state {
+            if compose.mode == ComposeMode::Normal {
+                compose.current_field = match compose.current_field {
+                    ComposeField::Recipients => ComposeField::Body,
+                    ComposeField::Subject => ComposeField::Recipients,
+                    ComposeField::Body => ComposeField::Subject,
+                };
+            }
+        }
+    }
+
+    pub fn compose_enter_insert_mode(&mut self) {
+        if let Some(ref mut compose) = self.compose_state {
+            if compose.mode == ComposeMode::Normal {
+                compose.mode = ComposeMode::Insert;
+            }
+        }
+    }
+
+    pub fn compose_exit_insert_mode(&mut self) {
+        if let Some(ref mut compose) = self.compose_state {
+            if compose.mode == ComposeMode::Insert {
+                compose.mode = ComposeMode::Normal;
+                // Auto-navigate to next field on escape from insert mode
+                self.compose_next_field();
+            }
+        }
+    }
+
+    pub fn compose_toggle_preview(&mut self) {
+        if let Some(ref mut compose) = self.compose_state {
+            if compose.mode == ComposeMode::Normal {
+                compose.show_preview = !compose.show_preview;
+            }
+        }
+    }
+
+    pub fn compose_insert_char(&mut self, c: char) {
+        if let Some(ref mut compose) = self.compose_state {
+            if compose.mode == ComposeMode::Insert {
+                match compose.current_field {
+                    ComposeField::Recipients => compose.recipients.push(c),
+                    ComposeField::Subject => compose.subject.push(c),
+                    ComposeField::Body => compose.body.push(c),
+                }
+            }
+        }
+    }
+
+    pub fn compose_delete_char(&mut self) {
+        if let Some(ref mut compose) = self.compose_state {
+            if compose.mode == ComposeMode::Insert {
+                match compose.current_field {
+                    ComposeField::Recipients => { compose.recipients.pop(); },
+                    ComposeField::Subject => { compose.subject.pop(); },
+                    ComposeField::Body => { compose.body.pop(); },
+                }
+            }
+        }
+    }
+
+    pub fn compose_insert_newline(&mut self) {
+        if let Some(ref mut compose) = self.compose_state {
+            if compose.mode == ComposeMode::Insert && compose.current_field == ComposeField::Body {
+                compose.body.push('\n');
+            }
+        }
+    }
+
+    // Stub methods for GPG and Yubikey hooks
+    pub fn compose_encrypt_with_gpg(&mut self) {
+        self.status_message = Some("GPG encryption hook (stub)".to_string());
+    }
+
+    pub fn compose_sign_with_yubikey(&mut self) {
+        self.status_message = Some("Yubikey signing hook (stub)".to_string());
     }
 
     pub fn quit(&mut self) {
@@ -233,8 +374,10 @@ mod tests {
         assert!(app.status_message.as_ref().unwrap().contains("Replying"));
         
         app.perform_action(Action::Compose);
-        assert!(app.status_message.as_ref().unwrap().contains("Composing"));
+        assert_eq!(app.current_view, View::Compose);
+        assert!(app.compose_state.is_some());
         
+        app.exit_compose_mode();
         app.perform_action(Action::Forward);
         assert!(app.status_message.as_ref().unwrap().contains("Forwarding"));
     }
@@ -260,5 +403,88 @@ mod tests {
         let email = app.get_selected_email();
         assert!(email.is_some());
         assert_eq!(email.unwrap().from, "bob@example.com");
+    }
+
+    #[test]
+    fn test_compose_mode_enter_exit() {
+        let mut app = App::new();
+        assert_eq!(app.current_view, View::InboxList);
+        assert!(app.compose_state.is_none());
+
+        app.enter_compose_mode();
+        assert_eq!(app.current_view, View::Compose);
+        assert!(app.compose_state.is_some());
+
+        app.exit_compose_mode();
+        assert_eq!(app.current_view, View::InboxList);
+        assert!(app.compose_state.is_none());
+    }
+
+    #[test]
+    fn test_compose_field_navigation() {
+        let mut app = App::new();
+        app.enter_compose_mode();
+
+        let compose = app.compose_state.as_ref().unwrap();
+        assert_eq!(compose.current_field, ComposeField::Recipients);
+
+        app.compose_next_field();
+        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Subject);
+
+        app.compose_next_field();
+        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Body);
+
+        app.compose_next_field();
+        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Recipients);
+
+        app.compose_previous_field();
+        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Body);
+    }
+
+    #[test]
+    fn test_compose_insert_mode() {
+        let mut app = App::new();
+        app.enter_compose_mode();
+
+        assert_eq!(app.compose_state.as_ref().unwrap().mode, ComposeMode::Normal);
+
+        app.compose_enter_insert_mode();
+        assert_eq!(app.compose_state.as_ref().unwrap().mode, ComposeMode::Insert);
+
+        app.compose_exit_insert_mode();
+        assert_eq!(app.compose_state.as_ref().unwrap().mode, ComposeMode::Normal);
+        // Should auto-advance to next field
+        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Subject);
+    }
+
+    #[test]
+    fn test_compose_text_input() {
+        let mut app = App::new();
+        app.enter_compose_mode();
+        app.compose_enter_insert_mode();
+
+        app.compose_insert_char('t');
+        app.compose_insert_char('e');
+        app.compose_insert_char('s');
+        app.compose_insert_char('t');
+
+        assert_eq!(app.compose_state.as_ref().unwrap().recipients, "test");
+
+        app.compose_delete_char();
+        assert_eq!(app.compose_state.as_ref().unwrap().recipients, "tes");
+    }
+
+    #[test]
+    fn test_compose_preview_toggle() {
+        let mut app = App::new();
+        app.enter_compose_mode();
+
+        assert_eq!(app.compose_state.as_ref().unwrap().show_preview, false);
+
+        app.compose_toggle_preview();
+        assert_eq!(app.compose_state.as_ref().unwrap().show_preview, true);
+
+        app.compose_toggle_preview();
+        assert_eq!(app.compose_state.as_ref().unwrap().show_preview, false);
     }
 }
