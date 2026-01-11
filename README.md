@@ -149,8 +149,6 @@ The application is structured into several modules:
 - **anyhow**: Error handling
 - **tui-markdown**: Markdown parsing and terminal rendering
 - **ratatui-core**: Core types for markdown rendering
-- **anyhow**: Error handling
-- **pulldown-cmark**: Markdown parsing and rendering
 
 ## Development Status
 

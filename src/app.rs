@@ -526,8 +526,8 @@ mod tests {
         app.compose_insert_char('u');
         app.compose_insert_char('b');
         assert_eq!(app.compose_state.as_ref().unwrap().subject, "sub");
-        app.compose_exit_insert_mode();
-        app.compose_previous_field(); // Go back to subject
+        app.compose_exit_insert_mode(); // Exits insert mode and auto-advances to Body
+        app.compose_previous_field(); // Navigate back to Subject
         app.compose_clear_field();
         assert_eq!(app.compose_state.as_ref().unwrap().subject, "");
     }
