@@ -226,6 +226,13 @@ fn render_compose(f: &mut Frame, area: Rect, app: &App) {
             }
         ));
         f.render_widget(recipients_widget, chunks[0]);
+        
+        // Set cursor position for Recipients field
+        if compose.current_field == ComposeField::Recipients && compose.mode == ComposeMode::Insert {
+            let cursor_x = chunks[0].x + 1 + 4 + compose.cursor_position as u16; // border + "To: " + cursor position
+            let cursor_y = chunks[0].y + 1; // border
+            f.set_cursor_position((cursor_x.min(chunks[0].right().saturating_sub(2)), cursor_y));
+        }
 
         // Subject field
         let subject_style = if compose.current_field == ComposeField::Subject {
@@ -258,6 +265,13 @@ fn render_compose(f: &mut Frame, area: Rect, app: &App) {
             }
         ));
         f.render_widget(subject_widget, chunks[1]);
+        
+        // Set cursor position for Subject field
+        if compose.current_field == ComposeField::Subject && compose.mode == ComposeMode::Insert {
+            let cursor_x = chunks[1].x + 1 + 9 + compose.cursor_position as u16; // border + "Subject: " + cursor position
+            let cursor_y = chunks[1].y + 1; // border
+            f.set_cursor_position((cursor_x.min(chunks[1].right().saturating_sub(2)), cursor_y));
+        }
 
         // Body field with optional preview
         let body_title = if compose.show_preview {
@@ -330,6 +344,26 @@ fn render_compose(f: &mut Frame, area: Rect, app: &App) {
                 .block(Block::default().borders(Borders::ALL).title(body_title))
                 .wrap(Wrap { trim: false });
             f.render_widget(body_widget, chunks[2]);
+            
+            // Set cursor position for Body field (only in non-preview mode)
+            if compose.current_field == ComposeField::Body && compose.mode == ComposeMode::Insert {
+                // Calculate cursor position in body text
+                let text_before_cursor = &compose.body[..compose.cursor_position.min(compose.body.len())];
+                let lines_before_cursor: Vec<&str> = text_before_cursor.lines().collect();
+                let line_count = lines_before_cursor.len();
+                let col_in_line = if let Some(last_line) = lines_before_cursor.last() {
+                    last_line.len()
+                } else {
+                    0
+                };
+                
+                let cursor_x = chunks[2].x + 1 + col_in_line as u16; // border + column position
+                let cursor_y = chunks[2].y + 1 + (line_count.saturating_sub(1)) as u16; // border + line number
+                f.set_cursor_position((
+                    cursor_x.min(chunks[2].right().saturating_sub(2)),
+                    cursor_y.min(chunks[2].bottom().saturating_sub(2))
+                ));
+            }
         }
     }
 }

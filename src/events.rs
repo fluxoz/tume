@@ -114,6 +114,10 @@ fn handle_compose_insert_keys(app: &mut App, key: KeyEvent) {
         // Enter (newline for body only)
         KeyCode::Enter => app.compose_insert_newline(),
         
+        // Cursor movement
+        KeyCode::Left => app.compose_move_cursor_left(),
+        KeyCode::Right => app.compose_move_cursor_right(),
+        
         _ => {}
     }
 }

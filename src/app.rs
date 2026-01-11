@@ -37,6 +37,7 @@ pub struct ComposeState {
     pub current_field: ComposeField,
     pub mode: ComposeMode,
     pub show_preview: bool,
+    pub cursor_position: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -185,6 +186,7 @@ impl App {
             current_field: ComposeField::Recipients,
             mode: ComposeMode::Normal,
             show_preview: false,
+            cursor_position: 0,
         });
         self.current_view = View::Compose;
     }
@@ -202,6 +204,12 @@ impl App {
                     ComposeField::Subject => ComposeField::Body,
                     ComposeField::Body => ComposeField::Recipients,
                 };
+                // Reset cursor to end of field when switching
+                compose.cursor_position = match compose.current_field {
+                    ComposeField::Recipients => compose.recipients.len(),
+                    ComposeField::Subject => compose.subject.len(),
+                    ComposeField::Body => compose.body.len(),
+                };
             }
         }
     }
@@ -214,6 +222,12 @@ impl App {
                     ComposeField::Subject => ComposeField::Recipients,
                     ComposeField::Body => ComposeField::Subject,
                 };
+                // Reset cursor to end of field when switching
+                compose.cursor_position = match compose.current_field {
+                    ComposeField::Recipients => compose.recipients.len(),
+                    ComposeField::Subject => compose.subject.len(),
+                    ComposeField::Body => compose.body.len(),
+                };
             }
         }
     }
@@ -222,6 +236,12 @@ impl App {
         if let Some(ref mut compose) = self.compose_state {
             if compose.mode == ComposeMode::Normal {
                 compose.mode = ComposeMode::Insert;
+                // Set cursor to end of current field
+                compose.cursor_position = match compose.current_field {
+                    ComposeField::Recipients => compose.recipients.len(),
+                    ComposeField::Subject => compose.subject.len(),
+                    ComposeField::Body => compose.body.len(),
+                };
             }
         }
     }
@@ -247,10 +267,16 @@ impl App {
     pub fn compose_insert_char(&mut self, c: char) {
         if let Some(ref mut compose) = self.compose_state {
             if compose.mode == ComposeMode::Insert {
-                match compose.current_field {
-                    ComposeField::Recipients => compose.recipients.push(c),
-                    ComposeField::Subject => compose.subject.push(c),
-                    ComposeField::Body => compose.body.push(c),
+                let text = match compose.current_field {
+                    ComposeField::Recipients => &mut compose.recipients,
+                    ComposeField::Subject => &mut compose.subject,
+                    ComposeField::Body => &mut compose.body,
+                };
+                
+                // Insert character at cursor position
+                if compose.cursor_position <= text.len() {
+                    text.insert(compose.cursor_position, c);
+                    compose.cursor_position += 1;
                 }
             }
         }
@@ -258,12 +284,16 @@ impl App {
 
     pub fn compose_delete_char(&mut self) {
         if let Some(ref mut compose) = self.compose_state {
-            if compose.mode == ComposeMode::Insert {
-                match compose.current_field {
-                    ComposeField::Recipients => { compose.recipients.pop(); },
-                    ComposeField::Subject => { compose.subject.pop(); },
-                    ComposeField::Body => { compose.body.pop(); },
-                }
+            if compose.mode == ComposeMode::Insert && compose.cursor_position > 0 {
+                let text = match compose.current_field {
+                    ComposeField::Recipients => &mut compose.recipients,
+                    ComposeField::Subject => &mut compose.subject,
+                    ComposeField::Body => &mut compose.body,
+                };
+                
+                // Remove character before cursor
+                compose.cursor_position -= 1;
+                text.remove(compose.cursor_position);
             }
         }
     }
@@ -271,7 +301,31 @@ impl App {
     pub fn compose_insert_newline(&mut self) {
         if let Some(ref mut compose) = self.compose_state {
             if compose.mode == ComposeMode::Insert && compose.current_field == ComposeField::Body {
-                compose.body.push('\n');
+                compose.body.insert(compose.cursor_position, '\n');
+                compose.cursor_position += 1;
+            }
+        }
+    }
+    
+    pub fn compose_move_cursor_left(&mut self) {
+        if let Some(ref mut compose) = self.compose_state {
+            if compose.mode == ComposeMode::Insert && compose.cursor_position > 0 {
+                compose.cursor_position -= 1;
+            }
+        }
+    }
+    
+    pub fn compose_move_cursor_right(&mut self) {
+        if let Some(ref mut compose) = self.compose_state {
+            if compose.mode == ComposeMode::Insert {
+                let max_pos = match compose.current_field {
+                    ComposeField::Recipients => compose.recipients.len(),
+                    ComposeField::Subject => compose.subject.len(),
+                    ComposeField::Body => compose.body.len(),
+                };
+                if compose.cursor_position < max_pos {
+                    compose.cursor_position += 1;
+                }
             }
         }
     }
