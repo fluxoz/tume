@@ -152,3 +152,113 @@ impl App {
         self.emails.get(self.selected_index)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_initialization() {
+        let app = App::new();
+        assert_eq!(app.current_view, View::InboxList);
+        assert_eq!(app.selected_index, 0);
+        assert_eq!(app.should_quit, false);
+        assert_eq!(app.emails.len(), 5);
+    }
+
+    #[test]
+    fn test_navigation() {
+        let mut app = App::new();
+        assert_eq!(app.selected_index, 0);
+        
+        app.next_email();
+        assert_eq!(app.selected_index, 1);
+        
+        app.next_email();
+        assert_eq!(app.selected_index, 2);
+        
+        app.previous_email();
+        assert_eq!(app.selected_index, 1);
+        
+        app.previous_email();
+        assert_eq!(app.selected_index, 0);
+        
+        // Should not go below 0
+        app.previous_email();
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_navigation_bounds() {
+        let mut app = App::new();
+        
+        // Move to the last email
+        for _ in 0..10 {
+            app.next_email();
+        }
+        
+        // Should not exceed last index
+        assert_eq!(app.selected_index, 4);
+    }
+
+    #[test]
+    fn test_view_switching() {
+        let mut app = App::new();
+        assert_eq!(app.current_view, View::InboxList);
+        
+        app.open_email();
+        assert_eq!(app.current_view, View::EmailDetail);
+        
+        app.close_email();
+        assert_eq!(app.current_view, View::InboxList);
+        
+        // Opening from detail view should not change
+        app.open_email();
+        app.open_email();
+        assert_eq!(app.current_view, View::EmailDetail);
+    }
+
+    #[test]
+    fn test_actions() {
+        let mut app = App::new();
+        
+        app.perform_action(Action::Delete);
+        assert!(app.status_message.is_some());
+        assert!(app.status_message.as_ref().unwrap().contains("Deleted"));
+        
+        app.perform_action(Action::Archive);
+        assert!(app.status_message.as_ref().unwrap().contains("Archived"));
+        
+        app.perform_action(Action::Reply);
+        assert!(app.status_message.as_ref().unwrap().contains("Replying"));
+        
+        app.perform_action(Action::Compose);
+        assert!(app.status_message.as_ref().unwrap().contains("Composing"));
+        
+        app.perform_action(Action::Forward);
+        assert!(app.status_message.as_ref().unwrap().contains("Forwarding"));
+    }
+
+    #[test]
+    fn test_quit() {
+        let mut app = App::new();
+        assert_eq!(app.should_quit, false);
+        
+        app.quit();
+        assert_eq!(app.should_quit, true);
+    }
+
+    #[test]
+    fn test_get_selected_email() {
+        let mut app = App::new();
+        
+        let email = app.get_selected_email();
+        assert!(email.is_some());
+        assert_eq!(email.unwrap().from, "alice@example.com");
+        
+        app.next_email();
+        let email = app.get_selected_email();
+        assert!(email.is_some());
+        assert_eq!(email.unwrap().from, "bob@example.com");
+    }
+}
