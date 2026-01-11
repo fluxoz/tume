@@ -8,8 +8,11 @@ A Terminal User Interface (TUI) email client built with Rust, featuring vim-styl
 
 - **Inbox View**: Browse a list of emails with sender, subject, date, and preview
 - **Email Detail View**: Read full email content
+- **Compose View**: Full-featured email composition with modal editing
 - **Vim Keybindings**: Navigate efficiently using familiar vim commands
-- **Email Actions**: Delete, archive, reply, compose, and forward emails (placeholder implementations)
+- **Modal Editing**: Normal and Insert modes for composing emails
+- **Markdown Support**: Compose emails with markdown and preview rendering
+- **Email Actions**: Delete, archive, reply, forward emails (placeholder implementations)
 
 ## Installation
 
@@ -45,7 +48,7 @@ The inbox displays a list of emails with the following information:
 | `d` | Delete email (placeholder) |
 | `a` | Archive email (placeholder) |
 | `r` | Reply to email (placeholder) |
-| `c` | Compose new email (placeholder) |
+| `c` | Compose new email |
 | `f` | Forward email (placeholder) |
 | `q` or `Esc` | Quit application |
 
@@ -66,6 +69,66 @@ When you open an email, you'll see:
 | `f` | Forward email (placeholder) |
 | `q` | Quit application |
 
+### Compose View
+
+The compose view allows you to write new emails with vim-style modal editing.
+
+#### Modal Editing
+
+- **Normal Mode**: Navigate between fields and access commands (default)
+- **Insert Mode**: Edit field content
+
+#### Email Fields
+
+1. **Recipients**: Email addresses of recipients
+2. **Subject**: Email subject line
+3. **Body**: Email message body (supports markdown)
+
+#### Keybindings (Compose View - Normal Mode)
+
+| Key | Action |
+|-----|--------|
+| `i` | Enter Insert mode for current field |
+| `j` or `↓` | Move to next field |
+| `k` or `↑` | Move to previous field |
+| `p` | Toggle markdown preview for body |
+| `Esc` or `q` | Exit compose mode |
+
+#### Keybindings (Compose View - Insert Mode)
+
+| Key | Action |
+|-----|--------|
+| `Esc` | Exit Insert mode and advance to next field |
+| `Backspace` | Delete character |
+| `Enter` | Insert newline (body field only) |
+| Any character | Insert character into current field |
+
+#### Workflow Example
+
+1. Press `c` from inbox to start composing
+2. Recipients field is selected (Normal mode)
+3. Press `i` to enter Insert mode
+4. Type email addresses (e.g., "user@example.com")
+5. Press `Esc` to exit Insert mode and advance to Subject
+6. Press `i` to edit Subject
+7. Type subject line
+8. Press `Esc` to advance to Body
+9. Press `i` to edit Body
+10. Type your message (supports markdown: **bold**, _italic_, ## headings, - lists)
+11. Press `Esc` to exit Insert mode
+12. Press `p` to preview markdown rendering
+13. Press `Esc` or `q` to exit compose
+
+#### Markdown Support
+
+The body field supports markdown with preview rendering:
+- **Headings**: `## Heading`
+- **Bold**: `**bold text**`
+- **Italic**: `_italic text_`
+- **Code**: `` `inline code` ``
+- **Code blocks**: ` ``` code block ``` `
+- **Lists**: `- list item`
+
 ## Architecture
 
 The application is structured into several modules:
@@ -80,19 +143,31 @@ The application is structured into several modules:
 - **ratatui**: Terminal UI library for creating rich text user interfaces
 - **crossterm**: Cross-platform terminal manipulation
 - **anyhow**: Error handling
+- **pulldown-cmark**: Markdown parsing and rendering
 
 ## Development Status
 
-This is a stub implementation demonstrating the core TUI functionality. The following features are currently placeholders:
+### Completed Features
+- ✅ Inbox view with email listing
+- ✅ Email detail view
+- ✅ Compose view with modal editing
+- ✅ Markdown preview in compose
+- ✅ Vim-style keybindings throughout
+- ✅ GPG and Yubikey hooks (stubs for future encryption/signing)
+
+### Placeholder Features
 - Email deletion (shows status message)
 - Email archiving (shows status message)
 - Reply functionality (shows status message)
-- Compose new email (shows status message)
 - Forward email (shows status message)
+- Actual sending of composed emails
 
-Future development will include:
+### Future Development
 - Actual email protocol integration (IMAP/SMTP)
-- Email composition interface
+- Send composed emails via SMTP
+- Reply and forward with pre-filled fields
+- GPG encryption implementation
+- Yubikey signing implementation
 - Configuration system
 - Multiple account support
 - Email threading
