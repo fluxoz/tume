@@ -91,6 +91,7 @@ The compose view allows you to write new emails with vim-style modal editing.
 | `i` | Enter Insert mode for current field |
 | `j` or `↓` | Move to next field |
 | `k` or `↑` | Move to previous field |
+| `d` | Clear the current field |
 | `p` | Toggle markdown preview for body |
 | `Esc` or `q` | Exit compose mode |
 
@@ -121,13 +122,16 @@ The compose view allows you to write new emails with vim-style modal editing.
 
 #### Markdown Support
 
-The body field supports markdown with preview rendering:
-- **Headings**: `## Heading`
-- **Bold**: `**bold text**`
-- **Italic**: `_italic text_`
-- **Code**: `` `inline code` ``
-- **Code blocks**: ` ``` code block ``` `
-- **Lists**: `- list item`
+The body field supports markdown with rich terminal preview rendering (powered by `tui-markdown`):
+- **Headings**: `## Heading` - rendered with styling
+- **Bold**: `**bold text**` - rendered in bold
+- **Italic**: `_italic text_` - rendered in italics  
+- **Code**: `` `inline code` `` - rendered with code styling
+- **Code blocks**: ` ``` code block ``` ` - rendered in code block format
+- **Lists**: `- list item` - rendered with bullets
+- And more markdown features with proper terminal styling
+
+Press `p` in Normal mode to toggle between raw markdown and rendered preview.
 
 ## Architecture
 
@@ -142,6 +146,9 @@ The application is structured into several modules:
 
 - **ratatui**: Terminal UI library for creating rich text user interfaces
 - **crossterm**: Cross-platform terminal manipulation
+- **anyhow**: Error handling
+- **tui-markdown**: Markdown parsing and terminal rendering
+- **ratatui-core**: Core types for markdown rendering
 - **anyhow**: Error handling
 - **pulldown-cmark**: Markdown parsing and rendering
 
