@@ -349,13 +349,9 @@ fn render_compose(f: &mut Frame, area: Rect, app: &App) {
             if compose.current_field == ComposeField::Body && compose.mode == ComposeMode::Insert {
                 // Calculate cursor position in body text
                 let text_before_cursor = &compose.body[..compose.cursor_position.min(compose.body.len())];
-                let lines_before_cursor: Vec<&str> = text_before_cursor.lines().collect();
-                let line_count = lines_before_cursor.len();
-                let col_in_line = if let Some(last_line) = lines_before_cursor.last() {
-                    last_line.len()
-                } else {
-                    0
-                };
+                let mut lines = text_before_cursor.lines();
+                let line_count = lines.clone().count();
+                let col_in_line = lines.last().map(|l| l.len()).unwrap_or(0);
                 
                 let cursor_x = chunks[2].x + 1 + col_in_line as u16; // border + column position
                 let cursor_y = chunks[2].y + 1 + (line_count.saturating_sub(1)) as u16; // border + line number
