@@ -253,17 +253,17 @@ impl App {
             if compose.mode == ComposeMode::Insert {
                 compose.mode = ComposeMode::Normal;
                 
-                // Auto-advance during initial traversal until we reach Body field
+                // Handle initial traversal logic
                 if !compose.initial_traversal_complete {
-                    // Check if we're on Body field - if so, mark traversal as complete
                     if compose.current_field == ComposeField::Body {
+                        // Reached Body - mark traversal complete and stay
                         compose.initial_traversal_complete = true;
                     } else {
-                        // Auto-advance to next field during initial setup
+                        // Not on Body yet - auto-advance to next field
                         self.compose_next_field();
                     }
                 }
-                // After initial traversal, stay on current field when exiting insert mode
+                // After traversal complete: stay on current field
             }
         }
     }

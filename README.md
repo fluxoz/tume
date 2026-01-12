@@ -126,8 +126,6 @@ The compose view allows you to write new emails with vim-style modal editing.
 - Use `j`/`k` to manually navigate to other fields if needed
 - Press `p` to preview markdown rendering
 - Press `Esc` or `q` to exit compose
-14. Press `p` to preview markdown rendering
-15. Press `Esc` or `q` to exit compose
 
 #### Markdown Support
 
