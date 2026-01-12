@@ -663,44 +663,58 @@ impl App {
             _ => return, // Only delete and archive are supported for batch
         };
 
-        // Get the email IDs to operate on (sorted in reverse to safely remove)
+        // Get the email IDs and indices to operate on (sorted in reverse to safely remove)
         let mut indices: Vec<usize> = self.visual_selections.iter().copied().collect();
         indices.sort_by(|a, b| b.cmp(a)); // Sort descending
 
-        // Perform the database operations
+        // Collect email IDs and perform database operations
+        let mut email_ids = Vec::new();
         for &index in &indices {
             if let Some(email) = self.emails.get(index) {
-                let email_id = email.id;
-                
-                // Perform database operation
-                if let Some(ref db) = self.db {
-                    let db_clone = db.clone();
-                    match action {
-                        Action::Delete => {
-                            tokio::spawn(async move {
-                                if let Err(e) = db_clone.delete_email(email_id).await {
-                                    eprintln!("Failed to delete email from database: {}", e);
-                                }
-                            });
+                email_ids.push(email.id);
+            }
+        }
+
+        // Perform database operations
+        if let Some(ref db) = self.db {
+            let db_clone = db.clone();
+            match action {
+                Action::Delete => {
+                    tokio::spawn(async move {
+                        for email_id in email_ids {
+                            if let Err(e) = db_clone.delete_email(email_id).await {
+                                eprintln!("Failed to delete email from database: {}", e);
+                            }
                         }
-                        Action::Archive => {
-                            tokio::spawn(async move {
-                                if let Err(e) = db_clone.archive_email(email_id).await {
-                                    eprintln!("Failed to archive email in database: {}", e);
-                                }
-                            });
-                        }
-                        _ => {}
-                    }
+                    });
                 }
+                Action::Archive => {
+                    tokio::spawn(async move {
+                        for email_id in email_ids {
+                            if let Err(e) = db_clone.archive_email(email_id).await {
+                                eprintln!("Failed to archive email in database: {}", e);
+                            }
+                        }
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        // Remove emails from the vector (in reverse order to maintain valid indices)
+        for &index in &indices {
+            if index < self.emails.len() {
+                self.emails.remove(index);
             }
         }
 
         self.status_message = Some(format!("{} {} emails", action_name, count));
         
         // Adjust selected_index if needed
-        if self.selected_index >= self.emails.len().saturating_sub(1) {
-            self.selected_index = self.emails.len().saturating_sub(1).max(0);
+        if !self.emails.is_empty() {
+            self.selected_index = self.selected_index.min(self.emails.len() - 1);
+        } else {
+            self.selected_index = 0;
         }
         
         // Exit visual mode after performing action
@@ -1204,6 +1218,9 @@ mod tests {
         assert_eq!(app.visual_mode, false);
         assert_eq!(app.visual_selections.len(), 0);
         
+        // Emails should be removed from the list
+        assert_eq!(app.emails.len(), initial_count - 3);
+        
         // Status message should be set
         assert!(app.status_message.is_some());
         assert!(app.status_message.as_ref().unwrap().contains("Deleted"));
@@ -1213,6 +1230,7 @@ mod tests {
     #[test]
     fn test_visual_mode_batch_archive() {
         let mut app = App::new();
+        let initial_count = app.emails.len();
         
         // Enter visual mode and select multiple emails
         app.enter_visual_mode();
@@ -1225,6 +1243,9 @@ mod tests {
         // Visual mode should be exited
         assert_eq!(app.visual_mode, false);
         assert_eq!(app.visual_selections.len(), 0);
+        
+        // Emails should be removed from the list
+        assert_eq!(app.emails.len(), initial_count - 2);
         
         // Status message should be set
         assert!(app.status_message.is_some());

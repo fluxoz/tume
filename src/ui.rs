@@ -128,8 +128,14 @@ fn render_inbox_list(f: &mut Frame, area: Rect, app: &App) {
         .enumerate()
         .map(|(i, email)| {
             // Determine style based on visual selection and cursor position
-            let style = if app.is_email_selected(i) {
-                // In visual mode and selected
+            let style = if i == app.selected_index && app.is_email_selected(i) {
+                // Cursor position within visual selection - use a distinct color
+                Style::default()
+                    .bg(Color::Cyan)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD)
+            } else if app.is_email_selected(i) {
+                // In visual mode and selected (but not cursor)
                 Style::default()
                     .bg(Color::Blue)
                     .fg(Color::White)
