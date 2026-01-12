@@ -131,18 +131,11 @@ impl App {
                 .collect()
         };
 
-        // Check if there's a draft to potentially load
-        let (compose_state, draft_id) = match db.get_drafts().await {
-            Ok(drafts) => {
-                if let Some(draft) = drafts.first() {
-                    // Store draft info but don't auto-load into compose mode
-                    // User will explicitly enter compose mode to see it
-                    (None, Some(draft.id))
-                } else {
-                    (None, None)
-                }
-            }
-            Err(_) => (None, None),
+        // Check if there's a draft available (but don't load it yet)
+        // Draft will be loaded when user presses 'c' to compose
+        let draft_id = match db.get_drafts().await {
+            Ok(drafts) => drafts.first().map(|d| d.id),
+            Err(_) => None,
         };
 
         Ok(Self {
@@ -151,7 +144,7 @@ impl App {
             selected_index: 0,
             should_quit: false,
             status_message: None,
-            compose_state,
+            compose_state: None,
             db: Some(db),
             draft_id,
         })
@@ -532,25 +525,14 @@ impl App {
     pub fn save_current_draft(&mut self) {
         if let Some(ref compose) = self.compose_state {
             if let Some(ref db) = self.db {
-                let draft = DbDraft {
-                    id: self.draft_id.unwrap_or(0),
-                    recipients: compose.recipients.clone(),
-                    subject: compose.subject.clone(),
-                    body: compose.body.clone(),
-                    created_at: String::new(),
-                    updated_at: String::new(),
-                };
+                let draft = self.create_db_draft(compose);
                 let db_clone = db.clone();
-                let current_draft_id = self.draft_id;
                 
                 tokio::spawn(async move {
                     match db_clone.save_draft(&draft).await {
                         Ok(_new_id) => {
-                            if current_draft_id.is_none() {
-                                // Draft was just created with a new ID
-                                // Note: We can't update self.draft_id from async context
-                                // This is fine - the ID will be reloaded on next compose entry
-                            }
+                            // Note: We can't update self.draft_id from async context
+                            // The draft ID will be picked up on next compose entry or app restart
                         }
                         Err(e) => {
                             eprintln!("Failed to save draft to database: {}", e);
@@ -568,23 +550,37 @@ impl App {
         if let Some(ref compose) = self.compose_state {
             if !compose.recipients.is_empty() || !compose.subject.is_empty() || !compose.body.is_empty() {
                 if let Some(ref db) = self.db {
-                    let draft = DbDraft {
-                        id: self.draft_id.unwrap_or(0),
-                        recipients: compose.recipients.clone(),
-                        subject: compose.subject.clone(),
-                        body: compose.body.clone(),
-                        created_at: String::new(),
-                        updated_at: String::new(),
-                    };
+                    let draft = self.create_db_draft(compose);
                     let db_clone = db.clone();
                     
                     // Use blocking call since we're about to exit
                     let runtime = tokio::runtime::Handle::try_current();
                     if let Ok(handle) = runtime {
-                        let _ = handle.block_on(db_clone.save_draft(&draft));
+                        match handle.block_on(db_clone.save_draft(&draft)) {
+                            Ok(_) => {
+                                // Draft saved successfully
+                            }
+                            Err(e) => {
+                                eprintln!("Warning: Failed to save draft before quit: {}", e);
+                            }
+                        }
+                    } else {
+                        eprintln!("Warning: Could not access runtime to save draft before quit");
                     }
                 }
             }
+        }
+    }
+    
+    /// Helper to create a DbDraft from current compose state
+    fn create_db_draft(&self, compose: &ComposeState) -> DbDraft {
+        DbDraft {
+            id: self.draft_id.unwrap_or(0),
+            recipients: compose.recipients.clone(),
+            subject: compose.subject.clone(),
+            body: compose.body.clone(),
+            created_at: String::new(),
+            updated_at: String::new(),
         }
     }
 
