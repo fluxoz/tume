@@ -92,6 +92,9 @@ fn handle_compose_normal_keys(app: &mut App, key: KeyEvent) {
         // Toggle preview
         KeyCode::Char('p') => app.compose_toggle_preview(),
         
+        // Save draft
+        KeyCode::Char('w') => app.save_current_draft(),
+        
         // Exit compose mode
         KeyCode::Esc => app.exit_compose_mode(),
         KeyCode::Char('q') => app.exit_compose_mode(),
