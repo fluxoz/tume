@@ -10,6 +10,7 @@ A Terminal User Interface (TUI) email client built with Rust, featuring vim-styl
 - **Email Detail View**: Read full email content
 - **Compose View**: Full-featured email composition with modal editing
 - **Vim Keybindings**: Navigate efficiently using familiar vim commands
+- **Visual Line Mode**: Select multiple emails with Shift+V for batch operations (delete, archive)
 - **Modal Editing**: Normal and Insert modes for composing emails
 - **Markdown Support**: Compose emails with markdown and preview rendering
 - **Draft Management**: Auto-save drafts on exit, restore on re-entry, with explicit save option
@@ -47,12 +48,46 @@ The inbox displays a list of emails with the following information:
 | `j` or `↓` | Move down to next email |
 | `k` or `↑` | Move up to previous email |
 | `Enter` or `l` | Open selected email |
+| `V` (Shift+V) | Enter visual line mode for batch operations |
+| `p` | Toggle preview panel |
 | `d` | Delete email (placeholder) |
 | `a` | Archive email (placeholder) |
 | `r` | Reply to email (placeholder) |
 | `c` | Compose new email |
 | `f` | Forward email (placeholder) |
 | `q` or `Esc` | Quit application |
+
+#### Visual Line Mode
+
+Visual line mode allows you to select multiple emails and perform batch operations, similar to vim's visual mode.
+
+**Entering Visual Mode:**
+- Press `Shift+V` (capital V) while in the inbox view
+- The current email will be highlighted in blue
+- Status bar shows "-- VISUAL LINE --"
+- Title bar shows the count of selected emails
+
+**Visual Mode Keybindings:**
+
+| Key | Action |
+|-----|--------|
+| `j` or `↓` | Extend selection down |
+| `k` or `↑` | Extend selection up |
+| `d` | Delete all selected emails |
+| `a` | Archive all selected emails |
+| `Esc`, `v`, or `V` | Exit visual mode |
+
+**Workflow Example:**
+1. Press `Shift+V` to enter visual mode
+2. Press `j` twice to select 3 emails (current + 2 below)
+3. Press `d` to delete all selected emails
+4. Visual mode exits automatically and shows "Deleted 3 emails"
+
+**Notes:**
+- Selection is always contiguous (from anchor point to cursor position)
+- Only works in inbox list view (not in detail or compose views)
+- Batch operations automatically exit visual mode
+- Selected emails are highlighted in blue
 
 ### Email Detail View
 
@@ -211,6 +246,8 @@ The application is structured into several modules:
 - ✅ Compose view with modal editing
 - ✅ Markdown preview in compose
 - ✅ Vim-style keybindings throughout
+- ✅ Visual line mode for batch operations (Shift+V)
+- ✅ Batch delete and archive operations
 - ✅ Draft management (auto-save, restore, explicit save with 'w')
 - ✅ Local database storage for emails and drafts
 - ✅ GPG and Yubikey hooks (stubs for future encryption/signing)
