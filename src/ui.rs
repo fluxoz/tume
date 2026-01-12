@@ -351,7 +351,7 @@ fn render_compose(f: &mut Frame, area: Rect, app: &App) {
                 let text_before_cursor = &compose.body[..compose.cursor_position.min(compose.body.len())];
                 
                 // Count newlines to get line number
-                let line_count = text_before_cursor.chars().filter(|&c| c == '\n').count();
+                let line_count = text_before_cursor.matches('\n').count();
                 
                 // Get column position by finding characters after last newline
                 let col_in_line = if let Some(last_newline_pos) = text_before_cursor.rfind('\n') {
