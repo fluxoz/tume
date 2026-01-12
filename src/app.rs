@@ -1,7 +1,9 @@
 use std::fmt;
+use crate::db::{DbEmail, DbDraft, EmailDatabase, EmailStatus as DbEmailStatus};
 
 #[derive(Debug, Clone)]
 pub struct Email {
+    pub id: i64,
     pub from: String,
     pub subject: String,
     pub preview: String,
@@ -69,6 +71,8 @@ pub struct App {
     pub should_quit: bool,
     pub status_message: Option<String>,
     pub compose_state: Option<ComposeState>,
+    pub db: Option<EmailDatabase>,
+    pub draft_id: Option<i64>,
 }
 
 impl App {
@@ -80,12 +84,69 @@ impl App {
             should_quit: false,
             status_message: None,
             compose_state: None,
+            db: None,
+            draft_id: None,
         }
+    }
+
+    /// Initialize the app with database support
+    pub async fn with_database() -> anyhow::Result<Self> {
+        let db = EmailDatabase::new(None).await?;
+        
+        // Load emails from database or populate with mock data if empty
+        let db_emails = db.get_emails_by_folder("inbox").await?;
+        let emails = if db_emails.is_empty() {
+            // Populate with mock data on first run
+            let mock_emails = Self::mock_emails();
+            for email in &mock_emails {
+                let db_email = DbEmail {
+                    id: 0,
+                    from_address: email.from.clone(),
+                    to_addresses: "me@example.com".to_string(),
+                    cc_addresses: None,
+                    bcc_addresses: None,
+                    subject: email.subject.clone(),
+                    body: email.body.clone(),
+                    preview: email.preview.clone(),
+                    date: email.date.clone(),
+                    status: DbEmailStatus::Unread,
+                    is_flagged: false,
+                    folder: "inbox".to_string(),
+                    thread_id: None,
+                };
+                db.insert_email(&db_email).await?;
+            }
+            mock_emails
+        } else {
+            db_emails
+                .into_iter()
+                .map(|e| Email {
+                    id: e.id,
+                    from: e.from_address,
+                    subject: e.subject,
+                    preview: e.preview,
+                    body: e.body,
+                    date: e.date,
+                })
+                .collect()
+        };
+
+        Ok(Self {
+            emails,
+            current_view: View::InboxList,
+            selected_index: 0,
+            should_quit: false,
+            status_message: None,
+            compose_state: None,
+            db: Some(db),
+            draft_id: None,
+        })
     }
 
     fn mock_emails() -> Vec<Email> {
         vec![
             Email {
+                id: 0,
                 from: "alice@example.com".to_string(),
                 subject: "Project Update: Q1 Planning".to_string(),
                 preview: "Hi team, I wanted to share some updates on our Q1 planning...".to_string(),
@@ -93,6 +154,7 @@ impl App {
                 date: "2026-01-10 14:30".to_string(),
             },
             Email {
+                id: 0,
                 from: "bob@example.com".to_string(),
                 subject: "Meeting notes from yesterday".to_string(),
                 preview: "Here are the notes from our meeting yesterday...".to_string(),
@@ -100,6 +162,7 @@ impl App {
                 date: "2026-01-10 09:15".to_string(),
             },
             Email {
+                id: 0,
                 from: "notifications@github.com".to_string(),
                 subject: "[fluxoz/tume] New issue opened: Create TUI stub".to_string(),
                 preview: "A new issue has been opened in your repository...".to_string(),
@@ -107,6 +170,7 @@ impl App {
                 date: "2026-01-09 22:45".to_string(),
             },
             Email {
+                id: 0,
                 from: "charlie@example.com".to_string(),
                 subject: "Re: Budget approval request".to_string(),
                 preview: "Thanks for submitting the budget request...".to_string(),
@@ -114,6 +178,7 @@ impl App {
                 date: "2026-01-09 16:20".to_string(),
             },
             Email {
+                id: 0,
                 from: "newsletter@techblog.com".to_string(),
                 subject: "Weekly Tech Digest: Rust 1.92 Released".to_string(),
                 preview: "This week in tech: Rust 1.92 brings exciting new features...".to_string(),
@@ -152,13 +217,31 @@ impl App {
             Action::Delete => {
                 if !self.emails.is_empty() {
                     let email = &self.emails[self.selected_index];
+                    let email_id = email.id;
                     self.status_message = Some(format!("Deleted email: {}", email.subject));
+                    
+                    // Delete from database if available
+                    if let Some(ref db) = self.db {
+                        let db_clone = db.clone();
+                        tokio::spawn(async move {
+                            let _ = db_clone.delete_email(email_id).await;
+                        });
+                    }
                 }
             }
             Action::Archive => {
                 if !self.emails.is_empty() {
                     let email = &self.emails[self.selected_index];
+                    let email_id = email.id;
                     self.status_message = Some(format!("Archived email: {}", email.subject));
+                    
+                    // Archive in database if available
+                    if let Some(ref db) = self.db {
+                        let db_clone = db.clone();
+                        tokio::spawn(async move {
+                            let _ = db_clone.archive_email(email_id).await;
+                        });
+                    }
                 }
             }
             Action::Reply => {
@@ -191,11 +274,33 @@ impl App {
             initial_traversal_complete: false,
         });
         self.current_view = View::Compose;
+        self.draft_id = None;
     }
 
     pub fn exit_compose_mode(&mut self) {
+        // Save draft to database if there's content
+        if let Some(ref compose) = self.compose_state {
+            if !compose.recipients.is_empty() || !compose.subject.is_empty() || !compose.body.is_empty() {
+                if let Some(ref db) = self.db {
+                    let draft = DbDraft {
+                        id: self.draft_id.unwrap_or(0),
+                        recipients: compose.recipients.clone(),
+                        subject: compose.subject.clone(),
+                        body: compose.body.clone(),
+                        created_at: String::new(),
+                        updated_at: String::new(),
+                    };
+                    let db_clone = db.clone();
+                    tokio::spawn(async move {
+                        let _ = db_clone.save_draft(&draft).await;
+                    });
+                }
+            }
+        }
+        
         self.compose_state = None;
         self.current_view = View::InboxList;
+        self.draft_id = None;
     }
 
     pub fn compose_next_field(&mut self) {
