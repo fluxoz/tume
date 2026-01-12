@@ -1,6 +1,7 @@
 mod app;
 mod events;
 mod ui;
+mod db;
 
 use anyhow::Result;
 use crossterm::{
@@ -12,7 +13,8 @@ use std::io;
 
 use app::App;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -20,8 +22,11 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Create app state
-    let mut app = App::new();
+    // Create app state with database
+    let mut app = App::with_database().await.unwrap_or_else(|e| {
+        eprintln!("Warning: Failed to initialize database: {}. Using in-memory mode.", e);
+        App::new()
+    });
 
     // Main loop
     let res = run_app(&mut terminal, &mut app);
