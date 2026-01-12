@@ -545,30 +545,25 @@ impl App {
         }
     }
 
-    /// Save draft before quitting the application
-    pub fn save_draft_before_quit(&mut self) {
+    /// Save draft before quitting the application (async version)
+    pub async fn save_draft_before_quit_async(&self) -> anyhow::Result<()> {
         if let Some(ref compose) = self.compose_state {
             if !compose.recipients.is_empty() || !compose.subject.is_empty() || !compose.body.is_empty() {
                 if let Some(ref db) = self.db {
                     let draft = self.create_db_draft(compose);
-                    let db_clone = db.clone();
-                    
-                    // Use blocking call since we're about to exit
-                    let runtime = tokio::runtime::Handle::try_current();
-                    if let Ok(handle) = runtime {
-                        match handle.block_on(db_clone.save_draft(&draft)) {
-                            Ok(_) => {
-                                // Draft saved successfully
-                            }
-                            Err(e) => {
-                                eprintln!("Warning: Failed to save draft before quit: {}", e);
-                            }
-                        }
-                    } else {
-                        eprintln!("Warning: Could not access runtime to save draft before quit");
-                    }
+                    db.save_draft(&draft).await?;
                 }
             }
+        }
+        Ok(())
+    }
+    
+    /// Check if there's a draft that needs saving
+    pub fn has_unsaved_draft(&self) -> bool {
+        if let Some(ref compose) = self.compose_state {
+            !compose.recipients.is_empty() || !compose.subject.is_empty() || !compose.body.is_empty()
+        } else {
+            false
         }
     }
     
