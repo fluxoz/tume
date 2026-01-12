@@ -99,9 +99,10 @@ The compose view allows you to write new emails with vim-style modal editing.
 
 | Key | Action |
 |-----|--------|
-| `Esc` | Exit Insert mode and advance to next field |
+| `Esc` | Exit Insert mode and return to Normal mode (stay on current field) |
 | `Backspace` | Delete character |
 | `Enter` | Insert newline (body field only) |
+| `Left` / `Right` | Move cursor left/right |
 | Any character | Insert character into current field |
 
 #### Workflow Example
@@ -110,15 +111,17 @@ The compose view allows you to write new emails with vim-style modal editing.
 2. Recipients field is selected (Normal mode)
 3. Press `i` to enter Insert mode
 4. Type email addresses (e.g., "user@example.com")
-5. Press `Esc` to exit Insert mode and advance to Subject
-6. Press `i` to edit Subject
-7. Type subject line
-8. Press `Esc` to advance to Body
-9. Press `i` to edit Body
-10. Type your message (supports markdown: **bold**, _italic_, ## headings, - lists)
-11. Press `Esc` to exit Insert mode
-12. Press `p` to preview markdown rendering
-13. Press `Esc` or `q` to exit compose
+5. Press `Esc` to return to Normal mode
+6. Press `j` to navigate to Subject field
+7. Press `i` to edit Subject
+8. Type subject line
+9. Press `Esc` to return to Normal mode
+10. Press `j` to navigate to Body field
+11. Press `i` to edit Body
+12. Type your message (supports markdown: **bold**, _italic_, ## headings, - lists)
+13. Press `Esc` to exit Insert mode
+14. Press `p` to preview markdown rendering
+15. Press `Esc` or `q` to exit compose
 
 #### Markdown Support
 

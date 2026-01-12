@@ -250,8 +250,8 @@ impl App {
         if let Some(ref mut compose) = self.compose_state {
             if compose.mode == ComposeMode::Insert {
                 compose.mode = ComposeMode::Normal;
-                // Auto-navigate to next field on escape from insert mode
-                self.compose_next_field();
+                // Don't auto-navigate anymore - stay on current field
+                // User can manually navigate with j/k if needed
             }
         }
     }
@@ -519,8 +519,8 @@ mod tests {
 
         app.compose_exit_insert_mode();
         assert_eq!(app.compose_state.as_ref().unwrap().mode, ComposeMode::Normal);
-        // Should auto-advance to next field
-        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Subject);
+        // Should stay on current field (no auto-advance)
+        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Recipients);
     }
 
     #[test]
@@ -569,7 +569,7 @@ mod tests {
 
         // Exit insert mode and clear
         app.compose_exit_insert_mode();
-        app.compose_previous_field(); // Go back to recipients
+        // No auto-advance, so we stay on Recipients
         app.compose_clear_field();
         assert_eq!(app.compose_state.as_ref().unwrap().recipients, "");
 
@@ -580,8 +580,7 @@ mod tests {
         app.compose_insert_char('u');
         app.compose_insert_char('b');
         assert_eq!(app.compose_state.as_ref().unwrap().subject, "sub");
-        app.compose_exit_insert_mode(); // Exits insert mode and auto-advances to Body
-        app.compose_previous_field(); // Navigate back to Subject
+        app.compose_exit_insert_mode(); // Exits insert mode, stays on Subject
         app.compose_clear_field();
         assert_eq!(app.compose_state.as_ref().unwrap().subject, "");
     }
