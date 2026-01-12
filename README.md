@@ -12,6 +12,8 @@ A Terminal User Interface (TUI) email client built with Rust, featuring vim-styl
 - **Vim Keybindings**: Navigate efficiently using familiar vim commands
 - **Modal Editing**: Normal and Insert modes for composing emails
 - **Markdown Support**: Compose emails with markdown and preview rendering
+- **Draft Management**: Auto-save drafts on exit, restore on re-entry, with explicit save option
+- **Local Database**: Email and draft storage using Turso/libSQL at `~/.local/share/tume/mail.db`
 - **Email Actions**: Delete, archive, reply, forward emails (placeholder implementations)
 
 ## Installation
@@ -93,7 +95,8 @@ The compose view allows you to write new emails with vim-style modal editing.
 | `k` or `↑` | Move to previous field |
 | `d` | Clear the current field |
 | `p` | Toggle markdown preview for body |
-| `Esc` or `q` | Exit compose mode |
+| `w` | Save draft to database |
+| `Esc` or `q` | Exit compose mode (draft is auto-saved) |
 
 #### Keybindings (Compose View - Insert Mode)
 
@@ -157,6 +160,29 @@ Styled heading "Meeting Notes"
 • Second item
 ```
 
+### Draft Management
+
+TUME automatically manages email drafts to prevent accidental data loss:
+
+#### Draft Behavior
+
+- **Auto-save on Exit**: When you press `Esc` or `q` to exit compose mode, your draft is automatically saved to the database at `~/.local/share/tume/mail.db`
+- **Draft Persistence**: The draft remains in memory during the session. Pressing `c` again will restore your draft exactly as you left it
+- **Explicit Save**: Press `w` in Normal mode to manually save the draft at any time (you'll see a "Draft saved" status message)
+- **Auto-save on Quit**: If you quit the application (press `q` from inbox or detail view) while composing an email, the draft is automatically saved before exit
+- **Draft Loading**: When you restart TUME and have a saved draft, it will be automatically loaded when you press `c` to compose a new email
+
+#### Draft Workflow Example
+
+1. Press `c` to start composing an email
+2. Enter some content in the fields
+3. Press `Esc` to exit (draft is auto-saved)
+4. Press `c` again - your draft is restored!
+5. Press `w` in Normal mode to save explicitly
+6. Continue editing or quit - draft is preserved
+
+**Note**: Currently, TUME keeps only the most recent draft. Sending an email or creating a new draft will replace the previous one.
+
 ## Architecture
 
 The application is structured into several modules:
@@ -173,6 +199,9 @@ The application is structured into several modules:
 - **anyhow**: Error handling
 - **tui-markdown**: Markdown parsing and terminal rendering
 - **ratatui-core**: Core types for markdown rendering
+- **libsql**: Turso/libSQL for local database storage
+- **tokio**: Async runtime for database operations
+- **dirs**: Cross-platform directory paths
 
 ## Development Status
 
@@ -182,6 +211,8 @@ The application is structured into several modules:
 - ✅ Compose view with modal editing
 - ✅ Markdown preview in compose
 - ✅ Vim-style keybindings throughout
+- ✅ Draft management (auto-save, restore, explicit save with 'w')
+- ✅ Local database storage for emails and drafts
 - ✅ GPG and Yubikey hooks (stubs for future encryption/signing)
 
 ### Placeholder Features
