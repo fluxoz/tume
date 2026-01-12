@@ -73,6 +73,7 @@ pub struct App {
     pub compose_state: Option<ComposeState>,
     pub db: Option<EmailDatabase>,
     pub draft_id: Option<i64>,
+    pub show_preview_panel: bool,
 }
 
 impl App {
@@ -86,6 +87,7 @@ impl App {
             compose_state: None,
             db: None,
             draft_id: None,
+            show_preview_panel: false,
         }
     }
 
@@ -147,6 +149,7 @@ impl App {
             compose_state: None,
             db: Some(db),
             draft_id,
+            show_preview_panel: false,
         })
     }
 
@@ -597,6 +600,10 @@ impl App {
         self.status_message = Some("Yubikey signing hook (stub)".to_string());
     }
 
+    pub fn toggle_preview_panel(&mut self) {
+        self.show_preview_panel = !self.show_preview_panel;
+    }
+
     pub fn quit(&mut self) {
         self.should_quit = true;
     }
@@ -847,6 +854,18 @@ mod tests {
     }
 
     #[test]
+    fn test_preview_panel_toggle() {
+        let mut app = App::new();
+        assert_eq!(app.show_preview_panel, false);
+
+        app.toggle_preview_panel();
+        assert_eq!(app.show_preview_panel, true);
+
+        app.toggle_preview_panel();
+        assert_eq!(app.show_preview_panel, false);
+    }
+
+    #[test]
     fn test_compose_clear_field() {
         let mut app = App::new();
         app.enter_compose_mode();
@@ -907,6 +926,7 @@ mod tests {
             compose_state: None,
             db: Some(db),
             draft_id: None,
+            show_preview_panel: false,
         };
 
         // Enter compose mode and add some content
@@ -970,6 +990,7 @@ mod tests {
             compose_state: None,
             db: Some(db),
             draft_id: None,
+            show_preview_panel: false,
         };
 
         // Enter compose mode and add some content

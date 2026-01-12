@@ -69,6 +69,38 @@ fn render_header(f: &mut Frame, area: Rect) {
 }
 
 fn render_inbox(f: &mut Frame, area: Rect, app: &App) {
+    // If preview panel is enabled, split the view
+    if app.show_preview_panel {
+        // Decide on split direction based on terminal dimensions
+        // Use vertical split if width > 120, otherwise horizontal
+        let use_vertical_split = area.width > 120;
+
+        let chunks = if use_vertical_split {
+            // Vertical split: list on left, preview on right
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area)
+        } else {
+            // Horizontal split: list on top, preview on bottom
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area)
+        };
+
+        // Render the inbox list in the first chunk
+        render_inbox_list(f, chunks[0], app);
+
+        // Render the preview in the second chunk
+        render_inbox_preview(f, chunks[1], app);
+    } else {
+        // No preview panel, use full area for list
+        render_inbox_list(f, area, app);
+    }
+}
+
+fn render_inbox_list(f: &mut Frame, area: Rect, app: &App) {
     let items: Vec<ListItem> = app
         .emails
         .iter()
@@ -145,6 +177,46 @@ fn render_inbox(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(list, area);
 }
 
+fn render_inbox_preview(f: &mut Frame, area: Rect, app: &App) {
+    if let Some(email) = app.get_selected_email() {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(5), Constraint::Min(0)])
+            .split(area);
+
+        // Email metadata
+        let metadata = vec![
+            Line::from(vec![
+                Span::styled("From: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(&email.from),
+            ]),
+            Line::from(vec![
+                Span::styled("Subject: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(&email.subject),
+            ]),
+            Line::from(vec![
+                Span::styled("Date: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(&email.date),
+            ]),
+        ];
+
+        let metadata_widget =
+            Paragraph::new(metadata).block(Block::default().borders(Borders::ALL).title("Preview"));
+        f.render_widget(metadata_widget, chunks[0]);
+
+        // Email body
+        let body = Paragraph::new(email.body.as_str())
+            .block(Block::default().borders(Borders::ALL).title("Message"))
+            .wrap(Wrap { trim: false });
+        f.render_widget(body, chunks[1]);
+    } else {
+        let placeholder = Paragraph::new("No email selected")
+            .block(Block::default().borders(Borders::ALL).title("Preview"))
+            .style(Style::default().fg(Color::DarkGray));
+        f.render_widget(placeholder, area);
+    }
+}
+
 fn render_email_detail(f: &mut Frame, area: Rect, app: &App) {
     if let Some(email) = app.get_selected_email() {
         let chunks = Layout::default()
@@ -190,7 +262,7 @@ fn render_email_detail(f: &mut Frame, area: Rect, app: &App) {
 fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     let help_text = match app.current_view {
         View::InboxList => {
-            "j/k: Navigate | Enter/l: Read | d: Delete | a: Archive | r: Reply | c: Compose | f: Forward | q: Quit"
+            "j/k: Navigate | Enter/l: Read | p: Preview | d: Delete | a: Archive | r: Reply | c: Compose | f: Forward | q: Quit"
         }
         View::EmailDetail => {
             "h/Esc: Back | d: Delete | a: Archive | r: Reply | f: Forward | q: Quit"

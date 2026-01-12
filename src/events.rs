@@ -34,6 +34,9 @@ fn handle_inbox_keys(app: &mut App, key: KeyEvent) {
         // Open email
         KeyCode::Enter | KeyCode::Char('l') => app.open_email(),
 
+        // Toggle preview panel
+        KeyCode::Char('p') => app.toggle_preview_panel(),
+
         // Actions
         KeyCode::Char('d') => app.perform_action(Action::Delete),
         KeyCode::Char('a') => app.perform_action(Action::Archive),
