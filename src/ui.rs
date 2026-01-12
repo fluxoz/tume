@@ -88,29 +88,41 @@ fn render_inbox(f: &mut Frame, area: Rect, app: &App) {
             let from_width = 30;
             let date_width = 20;
 
+            // Helper function to safely truncate strings at character boundaries
+            let truncate_str = |s: &str, max_len: usize| -> String {
+                if s.len() <= max_len {
+                    return s.to_string();
+                }
+                // Find the last character boundary before max_len
+                let mut end = max_len.saturating_sub(3).max(1);
+                while end > 0 && !s.is_char_boundary(end) {
+                    end -= 1;
+                }
+                format!("{}...", &s[..end])
+            };
+
             // Truncate from field if too long
             let from_display = if email.from.len() > from_width {
-                format!("{}...", &email.from[..from_width - 3])
+                truncate_str(&email.from, from_width)
             } else {
                 format!("{:<width$}", &email.from, width = from_width)
             };
 
             // Truncate date field if too long
             let date_display = if email.date.len() > date_width {
-                format!("{}...", &email.date[..date_width - 3])
+                truncate_str(&email.date, date_width)
             } else {
                 format!("{:<width$}", &email.date, width = date_width)
             };
 
             // Calculate subject width (remaining space)
             let available_width = area.width.saturating_sub(4) as usize; // subtract borders
-            let subject_width = available_width.saturating_sub(from_width + date_width + 4); // subtract column separators
+            let subject_width = available_width
+                .saturating_sub(from_width + date_width + 4) // subtract column separators
+                .max(10); // ensure minimum readable width
 
             let subject_display = if email.subject.len() > subject_width {
-                format!(
-                    "{}...",
-                    &email.subject[..subject_width.saturating_sub(3).max(1)]
-                )
+                truncate_str(&email.subject, subject_width)
             } else {
                 format!("{:<width$}", &email.subject, width = subject_width)
             };
