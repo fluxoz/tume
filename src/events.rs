@@ -1,4 +1,4 @@
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use std::io;
 
 use crate::app::{Action, App, View};
@@ -43,8 +43,8 @@ fn handle_inbox_keys(app: &mut App, key: KeyEvent) {
         // Toggle preview panel
         KeyCode::Char('p') => app.toggle_preview_panel(),
 
-        // Enter visual mode with Shift+V
-        KeyCode::Char('V') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+        // Enter visual mode with Shift+V (uppercase V)
+        KeyCode::Char('V') => {
             app.enter_visual_mode();
         }
 
