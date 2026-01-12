@@ -79,9 +79,11 @@ impl EmailDatabase {
     pub async fn new(db_path: Option<PathBuf>) -> Result<Self> {
         let path = db_path.unwrap_or_else(|| {
             let mut path = dirs::home_dir().expect("Could not find home directory");
-            path.push(".tume");
-            std::fs::create_dir_all(&path).expect("Could not create .tume directory");
-            path.push("emails.db");
+            path.push(".local");
+            path.push("share");
+            path.push("tume");
+            std::fs::create_dir_all(&path).expect("Could not create tume directory");
+            path.push("mail.db");
             path
         });
 
