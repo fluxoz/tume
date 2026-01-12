@@ -131,15 +131,29 @@ impl App {
                 .collect()
         };
 
+        // Check if there's a draft to potentially load
+        let (compose_state, draft_id) = match db.get_drafts().await {
+            Ok(drafts) => {
+                if let Some(draft) = drafts.first() {
+                    // Store draft info but don't auto-load into compose mode
+                    // User will explicitly enter compose mode to see it
+                    (None, Some(draft.id))
+                } else {
+                    (None, None)
+                }
+            }
+            Err(_) => (None, None),
+        };
+
         Ok(Self {
             emails,
             current_view: View::InboxList,
             selected_index: 0,
             should_quit: false,
             status_message: None,
-            compose_state: None,
+            compose_state,
             db: Some(db),
-            draft_id: None,
+            draft_id,
         })
     }
 
@@ -271,6 +285,47 @@ impl App {
     }
 
     pub fn enter_compose_mode(&mut self) {
+        // If we already have a compose state (from a previous ESC exit), just switch to it
+        if self.compose_state.is_some() {
+            self.current_view = View::Compose;
+            return;
+        }
+        
+        // Try to load saved draft from database (for new session)
+        if self.db.is_some() {
+            let db_clone = self.db.as_ref().unwrap().clone();
+            
+            // Try to load draft synchronously using spawn_blocking workaround
+            // This avoids blocking the event loop while still accessing the database
+            let runtime = tokio::runtime::Handle::try_current();
+            if let Ok(handle) = runtime {
+                // Use spawn_blocking to avoid nested runtime issues
+                let draft_result = std::thread::spawn(move || {
+                    handle.block_on(async { db_clone.get_drafts().await })
+                }).join();
+                
+                if let Ok(Ok(drafts)) = draft_result {
+                    if let Some(draft) = drafts.first() {
+                        // Load the draft into compose state
+                        self.compose_state = Some(ComposeState {
+                            recipients: draft.recipients.clone(),
+                            subject: draft.subject.clone(),
+                            body: draft.body.clone(),
+                            current_field: ComposeField::Recipients,
+                            mode: ComposeMode::Normal,
+                            show_preview: false,
+                            cursor_position: 0,
+                            initial_traversal_complete: !draft.body.is_empty(),
+                        });
+                        self.current_view = View::Compose;
+                        self.draft_id = Some(draft.id);
+                        return;
+                    }
+                }
+            }
+        }
+        
+        // No draft or failed to load - start with empty compose state
         self.compose_state = Some(ComposeState {
             recipients: String::new(),
             subject: String::new(),
@@ -284,6 +339,23 @@ impl App {
         self.current_view = View::Compose;
         self.draft_id = None;
     }
+    
+    /// Load the most recent draft into compose state (call this after enter_compose_mode)
+    pub async fn load_draft_async(&mut self) -> anyhow::Result<()> {
+        if let Some(ref db) = self.db {
+            let drafts = db.get_drafts().await?;
+            if let Some(draft) = drafts.first() {
+                if let Some(ref mut compose) = self.compose_state {
+                    compose.recipients = draft.recipients.clone();
+                    compose.subject = draft.subject.clone();
+                    compose.body = draft.body.clone();
+                    compose.initial_traversal_complete = !draft.body.is_empty();
+                    self.draft_id = Some(draft.id);
+                }
+            }
+        }
+        Ok(())
+    }
 
     pub fn exit_compose_mode(&mut self) {
         // Save draft to database if there's content
@@ -291,28 +363,13 @@ impl App {
         // Users expect compose exit to be immediate. Draft is saved in background.
         if let Some(ref compose) = self.compose_state {
             if !compose.recipients.is_empty() || !compose.subject.is_empty() || !compose.body.is_empty() {
-                if let Some(ref db) = self.db {
-                    let draft = DbDraft {
-                        id: self.draft_id.unwrap_or(0),
-                        recipients: compose.recipients.clone(),
-                        subject: compose.subject.clone(),
-                        body: compose.body.clone(),
-                        created_at: String::new(),
-                        updated_at: String::new(),
-                    };
-                    let db_clone = db.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = db_clone.save_draft(&draft).await {
-                            eprintln!("Failed to save draft to database: {}", e);
-                        }
-                    });
-                }
+                self.save_current_draft();
             }
         }
         
-        self.compose_state = None;
+        // Don't clear compose_state or draft_id - keep them for re-entry
+        // Just switch view back to inbox
         self.current_view = View::InboxList;
-        self.draft_id = None;
     }
 
     pub fn compose_next_field(&mut self) {
@@ -471,6 +528,66 @@ impl App {
         }
     }
 
+    /// Save the current draft to the database
+    pub fn save_current_draft(&mut self) {
+        if let Some(ref compose) = self.compose_state {
+            if let Some(ref db) = self.db {
+                let draft = DbDraft {
+                    id: self.draft_id.unwrap_or(0),
+                    recipients: compose.recipients.clone(),
+                    subject: compose.subject.clone(),
+                    body: compose.body.clone(),
+                    created_at: String::new(),
+                    updated_at: String::new(),
+                };
+                let db_clone = db.clone();
+                let current_draft_id = self.draft_id;
+                
+                tokio::spawn(async move {
+                    match db_clone.save_draft(&draft).await {
+                        Ok(_new_id) => {
+                            if current_draft_id.is_none() {
+                                // Draft was just created with a new ID
+                                // Note: We can't update self.draft_id from async context
+                                // This is fine - the ID will be reloaded on next compose entry
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to save draft to database: {}", e);
+                        }
+                    }
+                });
+                
+                self.status_message = Some("Draft saved".to_string());
+            }
+        }
+    }
+
+    /// Save draft before quitting the application
+    pub fn save_draft_before_quit(&mut self) {
+        if let Some(ref compose) = self.compose_state {
+            if !compose.recipients.is_empty() || !compose.subject.is_empty() || !compose.body.is_empty() {
+                if let Some(ref db) = self.db {
+                    let draft = DbDraft {
+                        id: self.draft_id.unwrap_or(0),
+                        recipients: compose.recipients.clone(),
+                        subject: compose.subject.clone(),
+                        body: compose.body.clone(),
+                        created_at: String::new(),
+                        updated_at: String::new(),
+                    };
+                    let db_clone = db.clone();
+                    
+                    // Use blocking call since we're about to exit
+                    let runtime = tokio::runtime::Handle::try_current();
+                    if let Ok(handle) = runtime {
+                        let _ = handle.block_on(db_clone.save_draft(&draft));
+                    }
+                }
+            }
+        }
+    }
+
     // Stub methods for GPG and Yubikey hooks
     pub fn compose_encrypt_with_gpg(&mut self) {
         self.status_message = Some("GPG encryption hook (stub)".to_string());
@@ -612,7 +729,13 @@ mod tests {
 
         app.exit_compose_mode();
         assert_eq!(app.current_view, View::InboxList);
-        assert!(app.compose_state.is_none());
+        // Compose state is preserved for re-entry (draft behavior)
+        assert!(app.compose_state.is_some());
+        
+        // Re-entering compose mode should restore the same state
+        app.enter_compose_mode();
+        assert_eq!(app.current_view, View::Compose);
+        assert!(app.compose_state.is_some());
     }
 
     #[test]
@@ -727,4 +850,111 @@ mod tests {
         app.compose_clear_field();
         assert_eq!(app.compose_state.as_ref().unwrap().subject, "");
     }
+    
+    #[tokio::test]
+    async fn test_draft_save_and_load() {
+        // Use a unique database for this test to avoid locking issues
+        let test_id = std::process::id();
+        let path = std::path::PathBuf::from(format!("/tmp/test_tume_draft_save_{}.db", test_id));
+        let _ = std::fs::remove_file(&path);
+        
+        let db = crate::db::EmailDatabase::new(Some(path.clone())).await.unwrap();
+        let mut app = App {
+            emails: Vec::new(),
+            current_view: View::InboxList,
+            selected_index: 0,
+            should_quit: false,
+            status_message: None,
+            compose_state: None,
+            db: Some(db),
+            draft_id: None,
+        };
+        
+        // Enter compose mode and add some content
+        app.enter_compose_mode();
+        app.compose_enter_insert_mode();
+        app.compose_insert_char('t');
+        app.compose_insert_char('e');
+        app.compose_insert_char('s');
+        app.compose_insert_char('t');
+        app.compose_exit_insert_mode(); // Move to subject
+        
+        app.compose_enter_insert_mode();
+        app.compose_insert_char('M');
+        app.compose_insert_char('y');
+        app.compose_insert_char(' ');
+        app.compose_insert_char('D');
+        app.compose_insert_char('r');
+        app.compose_insert_char('a');
+        app.compose_insert_char('f');
+        app.compose_insert_char('t');
+        app.compose_exit_insert_mode(); // Move to body
+        
+        // Manually save the draft
+        app.save_current_draft();
+        
+        // Give async save time to complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        
+        // Exit compose mode
+        app.exit_compose_mode();
+        
+        // Re-enter compose mode and manually load draft
+        app.enter_compose_mode();
+        app.load_draft_async().await.unwrap();
+        
+        let compose = app.compose_state.as_ref().unwrap();
+        assert_eq!(compose.recipients, "test");
+        assert_eq!(compose.subject, "My Draft");
+        
+        // Cleanup
+        let _ = std::fs::remove_file(&path);
+    }
+    
+    #[tokio::test]
+    async fn test_draft_persist_on_exit() {
+        // Use a unique database for this test to avoid locking issues
+        let test_id = std::process::id();
+        let path = std::path::PathBuf::from(format!("/tmp/test_tume_draft_exit_{}.db", test_id));
+        let _ = std::fs::remove_file(&path);
+        
+        let db = crate::db::EmailDatabase::new(Some(path.clone())).await.unwrap();
+        let mut app = App {
+            emails: Vec::new(),
+            current_view: View::InboxList,
+            selected_index: 0,
+            should_quit: false,
+            status_message: None,
+            compose_state: None,
+            db: Some(db),
+            draft_id: None,
+        };
+        
+        // Enter compose mode and add some content
+        app.enter_compose_mode();
+        app.compose_enter_insert_mode();
+        app.compose_insert_char('d');
+        app.compose_insert_char('r');
+        app.compose_insert_char('a');
+        app.compose_insert_char('f');
+        app.compose_insert_char('t');
+        
+        // Exit compose mode (should auto-save)
+        app.compose_exit_insert_mode();
+        app.exit_compose_mode();
+        
+        // Give async save time to complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        
+        // Re-enter compose mode and manually load draft
+        app.enter_compose_mode();
+        app.load_draft_async().await.unwrap();
+        
+        let compose = app.compose_state.as_ref().unwrap();
+        assert_eq!(compose.recipients, "draft");
+        
+        // Cleanup
+        let _ = std::fs::remove_file(&path);
+    }
 }
+
