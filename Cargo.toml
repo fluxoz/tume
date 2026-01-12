@@ -7,3 +7,5 @@ edition = "2024"
 ratatui = "0.29"
 crossterm = { version = "0.28", features = ["event-stream"] }
 anyhow = "1.0"
+tui-markdown = "0.3"
+ratatui-core = "0.1"
