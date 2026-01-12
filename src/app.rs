@@ -38,6 +38,7 @@ pub struct ComposeState {
     pub mode: ComposeMode,
     pub show_preview: bool,
     pub cursor_position: usize,
+    pub initial_traversal_complete: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -187,6 +188,7 @@ impl App {
             mode: ComposeMode::Normal,
             show_preview: false,
             cursor_position: 0,
+            initial_traversal_complete: false,
         });
         self.current_view = View::Compose;
     }
@@ -250,8 +252,18 @@ impl App {
         if let Some(ref mut compose) = self.compose_state {
             if compose.mode == ComposeMode::Insert {
                 compose.mode = ComposeMode::Normal;
-                // Don't auto-navigate anymore - stay on current field
-                // User can manually navigate with j/k if needed
+                
+                // Auto-advance during initial traversal until we reach Body field
+                if !compose.initial_traversal_complete {
+                    // Check if we're on Body field - if so, mark traversal as complete
+                    if compose.current_field == ComposeField::Body {
+                        compose.initial_traversal_complete = true;
+                    } else {
+                        // Auto-advance to next field during initial setup
+                        self.compose_next_field();
+                    }
+                }
+                // After initial traversal, stay on current field when exiting insert mode
             }
         }
     }
@@ -519,8 +531,18 @@ mod tests {
 
         app.compose_exit_insert_mode();
         assert_eq!(app.compose_state.as_ref().unwrap().mode, ComposeMode::Normal);
-        // Should stay on current field (no auto-advance)
-        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Recipients);
+        // Should auto-advance to Subject during initial traversal
+        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Subject);
+        
+        // Continue to Body
+        app.compose_enter_insert_mode();
+        app.compose_exit_insert_mode();
+        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Body);
+        
+        // Now that we're on Body, traversal is complete - Esc should stay on Body
+        app.compose_enter_insert_mode();
+        app.compose_exit_insert_mode();
+        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Body);
     }
 
     #[test]
@@ -569,7 +591,9 @@ mod tests {
 
         // Exit insert mode and clear
         app.compose_exit_insert_mode();
-        // No auto-advance, so we stay on Recipients
+        // Auto-advances to Subject during initial traversal
+        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Subject);
+        app.compose_previous_field(); // Go back to Recipients
         app.compose_clear_field();
         assert_eq!(app.compose_state.as_ref().unwrap().recipients, "");
 
@@ -580,7 +604,9 @@ mod tests {
         app.compose_insert_char('u');
         app.compose_insert_char('b');
         assert_eq!(app.compose_state.as_ref().unwrap().subject, "sub");
-        app.compose_exit_insert_mode(); // Exits insert mode, stays on Subject
+        app.compose_exit_insert_mode(); // Auto-advances to Body during initial traversal
+        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Body);
+        app.compose_previous_field(); // Go back to Subject
         app.compose_clear_field();
         assert_eq!(app.compose_state.as_ref().unwrap().subject, "");
     }
