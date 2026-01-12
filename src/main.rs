@@ -31,6 +31,13 @@ async fn main() -> Result<()> {
     // Main loop
     let res = run_app(&mut terminal, &mut app);
 
+    // Save draft before cleaning up terminal (if needed)
+    if app.has_unsaved_draft() {
+        if let Err(e) = app.save_draft_before_quit_async().await {
+            eprintln!("Warning: Failed to save draft before quit: {}", e);
+        }
+    }
+
     // Restore terminal
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
