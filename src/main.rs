@@ -52,6 +52,8 @@ fn run_app<B: ratatui::backend::Backend>(
         events::handle_events(app)?;
 
         if app.should_quit {
+            // Save draft before quitting if in compose mode
+            app.save_draft_before_quit();
             break;
         }
     }

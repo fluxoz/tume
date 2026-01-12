@@ -159,7 +159,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
         View::Compose => {
             if let Some(ref compose) = app.compose_state {
                 match compose.mode {
-                    ComposeMode::Normal => "i: Insert | j/k: Navigate fields | d: Clear field | p: Preview | Esc/q: Exit",
+                    ComposeMode::Normal => "i: Insert | j/k: Navigate | d: Clear | p: Preview | w: Save draft | Esc/q: Exit",
                     ComposeMode::Insert => "Esc: Normal mode | Type to edit field",
                 }
             } else {
