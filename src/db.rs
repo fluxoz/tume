@@ -92,12 +92,12 @@ impl EmailDatabase {
             .build()
             .await
             .context("Failed to open database")?;
-        
+
         let conn = db.connect().context("Failed to connect to database")?;
-        
+
         let db = Self { conn };
         db.initialize_schema().await?;
-        
+
         Ok(db)
     }
 
@@ -260,7 +260,8 @@ impl EmailDatabase {
 
     /// Get all emails from a specific folder
     pub async fn get_emails_by_folder(&self, folder: &str) -> Result<Vec<DbEmail>> {
-        let mut rows = self.conn
+        let mut rows = self
+            .conn
             .query(
                 "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
                         subject, body, preview, date, status, is_flagged, folder, thread_id
@@ -296,7 +297,8 @@ impl EmailDatabase {
 
     /// Get a single email by ID
     pub async fn get_email_by_id(&self, id: i64) -> Result<Option<DbEmail>> {
-        let mut rows = self.conn
+        let mut rows = self
+            .conn
             .query(
                 "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
                         subject, body, preview, date, status, is_flagged, folder, thread_id
@@ -357,8 +359,12 @@ impl EmailDatabase {
     /// Toggle email flag
     pub async fn toggle_email_flag(&self, id: i64) -> Result<bool> {
         // First get current flag status
-        let mut rows = self.conn
-            .query("SELECT is_flagged FROM emails WHERE id = ?1", libsql::params![id])
+        let mut rows = self
+            .conn
+            .query(
+                "SELECT is_flagged FROM emails WHERE id = ?1",
+                libsql::params![id],
+            )
             .await
             .context("Failed to query email flag")?;
 
@@ -401,7 +407,11 @@ impl EmailDatabase {
             self.conn
                 .execute(
                     "INSERT INTO drafts (recipients, subject, body) VALUES (?1, ?2, ?3)",
-                    libsql::params![draft.recipients.as_str(), draft.subject.as_str(), draft.body.as_str()],
+                    libsql::params![
+                        draft.recipients.as_str(),
+                        draft.subject.as_str(),
+                        draft.body.as_str()
+                    ],
                 )
                 .await
                 .context("Failed to insert draft")?;
@@ -421,7 +431,8 @@ impl EmailDatabase {
 
     /// Get all drafts
     pub async fn get_drafts(&self) -> Result<Vec<DbDraft>> {
-        let mut rows = self.conn
+        let mut rows = self
+            .conn
             .query(
                 "SELECT id, recipients, subject, body, created_at, updated_at
                  FROM drafts
@@ -458,7 +469,8 @@ impl EmailDatabase {
 
     /// Get all folders
     pub async fn get_folders(&self) -> Result<Vec<DbFolder>> {
-        let mut rows = self.conn
+        let mut rows = self
+            .conn
             .query(
                 "SELECT id, name, display_order FROM folders ORDER BY display_order",
                 (),
@@ -481,7 +493,8 @@ impl EmailDatabase {
     /// Search emails by query string (searches in subject, body, and from address)
     pub async fn search_emails(&self, query: &str) -> Result<Vec<DbEmail>> {
         let search_pattern = format!("%{}%", query);
-        let mut rows = self.conn
+        let mut rows = self
+            .conn
             .query(
                 "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
                         subject, body, preview, date, status, is_flagged, folder, thread_id
@@ -544,7 +557,7 @@ mod tests {
     #[tokio::test]
     async fn test_insert_and_get_email() {
         let db = create_test_db().await.unwrap();
-        
+
         let email = DbEmail {
             id: 0,
             from_address: "test@example.com".to_string(),
@@ -574,7 +587,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_emails_by_folder() {
         let db = create_test_db().await.unwrap();
-        
+
         let email1 = DbEmail {
             id: 0,
             from_address: "test1@example.com".to_string(),
@@ -622,7 +635,7 @@ mod tests {
     #[tokio::test]
     async fn test_update_email_status() {
         let db = create_test_db().await.unwrap();
-        
+
         let email = DbEmail {
             id: 0,
             from_address: "test@example.com".to_string(),
@@ -649,7 +662,7 @@ mod tests {
     #[tokio::test]
     async fn test_archive_email() {
         let db = create_test_db().await.unwrap();
-        
+
         let email = DbEmail {
             id: 0,
             from_address: "test@example.com".to_string(),
@@ -677,7 +690,7 @@ mod tests {
     #[tokio::test]
     async fn test_save_and_get_drafts() {
         let db = create_test_db().await.unwrap();
-        
+
         let draft = DbDraft {
             id: 0,
             recipients: "test@example.com".to_string(),
@@ -698,7 +711,7 @@ mod tests {
     #[tokio::test]
     async fn test_search_emails() {
         let db = create_test_db().await.unwrap();
-        
+
         let email1 = DbEmail {
             id: 0,
             from_address: "alice@example.com".to_string(),

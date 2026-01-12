@@ -1,14 +1,14 @@
 mod app;
+mod db;
 mod events;
 mod ui;
-mod db;
 
 use anyhow::Result;
 use crossterm::{
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
 
 use app::App;
@@ -24,7 +24,10 @@ async fn main() -> Result<()> {
 
     // Create app state with database
     let mut app = App::with_database().await.unwrap_or_else(|e| {
-        eprintln!("Warning: Failed to initialize database: {}. Using in-memory mode.", e);
+        eprintln!(
+            "Warning: Failed to initialize database: {}. Using in-memory mode.",
+            e
+        );
         App::new()
     });
 
