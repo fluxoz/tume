@@ -230,7 +230,7 @@ impl EmailDatabase {
 
     /// Insert a new email into the database
     pub async fn insert_email(&self, email: &DbEmail) -> Result<i64> {
-        let result = self.conn
+        self.conn
             .execute(
                 "INSERT INTO emails (from_address, to_addresses, cc_addresses, bcc_addresses, 
                                      subject, body, preview, date, status, is_flagged, folder, thread_id)
@@ -253,7 +253,7 @@ impl EmailDatabase {
             .await
             .context("Failed to insert email")?;
 
-        Ok(result as i64)
+        Ok(self.conn.last_insert_rowid())
     }
 
     /// Get all emails from a specific folder
@@ -394,16 +394,16 @@ impl EmailDatabase {
 
     /// Save a draft
     pub async fn save_draft(&self, draft: &DbDraft) -> Result<i64> {
-        let result = if draft.id == 0 {
+        if draft.id == 0 {
             // Insert new draft
-            let rows_affected = self.conn
+            self.conn
                 .execute(
                     "INSERT INTO drafts (recipients, subject, body) VALUES (?1, ?2, ?3)",
                     libsql::params![draft.recipients.as_str(), draft.subject.as_str(), draft.body.as_str()],
                 )
                 .await
                 .context("Failed to insert draft")?;
-            rows_affected as i64
+            Ok(self.conn.last_insert_rowid())
         } else {
             // Update existing draft
             self.conn
@@ -413,10 +413,8 @@ impl EmailDatabase {
                 )
                 .await
                 .context("Failed to update draft")?;
-            draft.id
-        };
-
-        Ok(result)
+            Ok(draft.id)
+        }
     }
 
     /// Get all drafts
