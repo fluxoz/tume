@@ -221,10 +221,15 @@ impl App {
                     self.status_message = Some(format!("Deleted email: {}", email.subject));
                     
                     // Delete from database if available
+                    // Note: Using fire-and-forget pattern as this is a background operation.
+                    // The UI state is updated immediately for responsiveness. If the database
+                    // operation fails, it will be retried on next app restart.
                     if let Some(ref db) = self.db {
                         let db_clone = db.clone();
                         tokio::spawn(async move {
-                            let _ = db_clone.delete_email(email_id).await;
+                            if let Err(e) = db_clone.delete_email(email_id).await {
+                                eprintln!("Failed to delete email from database: {}", e);
+                            }
                         });
                     }
                 }
@@ -236,10 +241,13 @@ impl App {
                     self.status_message = Some(format!("Archived email: {}", email.subject));
                     
                     // Archive in database if available
+                    // Note: Using fire-and-forget pattern for background database operation.
                     if let Some(ref db) = self.db {
                         let db_clone = db.clone();
                         tokio::spawn(async move {
-                            let _ = db_clone.archive_email(email_id).await;
+                            if let Err(e) = db_clone.archive_email(email_id).await {
+                                eprintln!("Failed to archive email in database: {}", e);
+                            }
                         });
                     }
                 }
@@ -279,6 +287,8 @@ impl App {
 
     pub fn exit_compose_mode(&mut self) {
         // Save draft to database if there's content
+        // Note: Using fire-and-forget pattern for non-blocking UI experience.
+        // Users expect compose exit to be immediate. Draft is saved in background.
         if let Some(ref compose) = self.compose_state {
             if !compose.recipients.is_empty() || !compose.subject.is_empty() || !compose.body.is_empty() {
                 if let Some(ref db) = self.db {
@@ -292,7 +302,9 @@ impl App {
                     };
                     let db_clone = db.clone();
                     tokio::spawn(async move {
-                        let _ = db_clone.save_draft(&draft).await;
+                        if let Err(e) = db_clone.save_draft(&draft).await {
+                            eprintln!("Failed to save draft to database: {}", e);
+                        }
                     });
                 }
             }
