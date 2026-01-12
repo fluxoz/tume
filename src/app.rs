@@ -1,5 +1,5 @@
+use crate::db::{DbDraft, DbEmail, EmailDatabase, EmailStatus as DbEmailStatus};
 use std::fmt;
-use crate::db::{DbEmail, DbDraft, EmailDatabase, EmailStatus as DbEmailStatus};
 
 #[derive(Debug, Clone)]
 pub struct Email {
@@ -73,6 +73,7 @@ pub struct App {
     pub compose_state: Option<ComposeState>,
     pub db: Option<EmailDatabase>,
     pub draft_id: Option<i64>,
+    pub show_preview_panel: bool,
 }
 
 impl App {
@@ -86,13 +87,14 @@ impl App {
             compose_state: None,
             db: None,
             draft_id: None,
+            show_preview_panel: false,
         }
     }
 
     /// Initialize the app with database support
     pub async fn with_database() -> anyhow::Result<Self> {
         let db = EmailDatabase::new(None).await?;
-        
+
         // Load emails from database or populate with mock data if empty
         let db_emails = db.get_emails_by_folder("inbox").await?;
         let emails = if db_emails.is_empty() {
@@ -147,6 +149,7 @@ impl App {
             compose_state: None,
             db: Some(db),
             draft_id,
+            show_preview_panel: false,
         })
     }
 
@@ -226,7 +229,7 @@ impl App {
                     let email = &self.emails[self.selected_index];
                     let email_id = email.id;
                     self.status_message = Some(format!("Deleted email: {}", email.subject));
-                    
+
                     // Delete from database if available
                     // Note: Using fire-and-forget pattern as this is a background operation.
                     // The UI state is updated immediately for responsiveness. If the database
@@ -246,7 +249,7 @@ impl App {
                     let email = &self.emails[self.selected_index];
                     let email_id = email.id;
                     self.status_message = Some(format!("Archived email: {}", email.subject));
-                    
+
                     // Archive in database if available
                     // Note: Using fire-and-forget pattern for background database operation.
                     if let Some(ref db) = self.db {
@@ -283,11 +286,11 @@ impl App {
             self.current_view = View::Compose;
             return;
         }
-        
+
         // Try to load saved draft from database (for new session)
         if self.db.is_some() {
             let db_clone = self.db.as_ref().unwrap().clone();
-            
+
             // Try to load draft synchronously using spawn_blocking workaround
             // This avoids blocking the event loop while still accessing the database
             let runtime = tokio::runtime::Handle::try_current();
@@ -295,8 +298,9 @@ impl App {
                 // Use spawn_blocking to avoid nested runtime issues
                 let draft_result = std::thread::spawn(move || {
                     handle.block_on(async { db_clone.get_drafts().await })
-                }).join();
-                
+                })
+                .join();
+
                 if let Ok(Ok(drafts)) = draft_result {
                     if let Some(draft) = drafts.first() {
                         // Load the draft into compose state
@@ -317,7 +321,7 @@ impl App {
                 }
             }
         }
-        
+
         // No draft or failed to load - start with empty compose state
         self.compose_state = Some(ComposeState {
             recipients: String::new(),
@@ -332,7 +336,7 @@ impl App {
         self.current_view = View::Compose;
         self.draft_id = None;
     }
-    
+
     /// Load the most recent draft into compose state (call this after enter_compose_mode)
     pub async fn load_draft_async(&mut self) -> anyhow::Result<()> {
         if let Some(ref db) = self.db {
@@ -355,11 +359,14 @@ impl App {
         // Note: Using fire-and-forget pattern for non-blocking UI experience.
         // Users expect compose exit to be immediate. Draft is saved in background.
         if let Some(ref compose) = self.compose_state {
-            if !compose.recipients.is_empty() || !compose.subject.is_empty() || !compose.body.is_empty() {
+            if !compose.recipients.is_empty()
+                || !compose.subject.is_empty()
+                || !compose.body.is_empty()
+            {
                 self.save_current_draft();
             }
         }
-        
+
         // Don't clear compose_state or draft_id - keep them for re-entry
         // Just switch view back to inbox
         self.current_view = View::InboxList;
@@ -419,7 +426,7 @@ impl App {
         if let Some(ref mut compose) = self.compose_state {
             if compose.mode == ComposeMode::Insert {
                 compose.mode = ComposeMode::Normal;
-                
+
                 // Handle initial traversal logic
                 if !compose.initial_traversal_complete {
                     if compose.current_field == ComposeField::Body {
@@ -451,7 +458,7 @@ impl App {
                     ComposeField::Subject => &mut compose.subject,
                     ComposeField::Body => &mut compose.body,
                 };
-                
+
                 // Insert character at cursor position
                 if compose.cursor_position <= text.len() {
                     text.insert(compose.cursor_position, c);
@@ -469,7 +476,7 @@ impl App {
                     ComposeField::Subject => &mut compose.subject,
                     ComposeField::Body => &mut compose.body,
                 };
-                
+
                 // Remove character before cursor
                 compose.cursor_position -= 1;
                 text.remove(compose.cursor_position);
@@ -485,7 +492,7 @@ impl App {
             }
         }
     }
-    
+
     pub fn compose_move_cursor_left(&mut self) {
         if let Some(ref mut compose) = self.compose_state {
             if compose.mode == ComposeMode::Insert && compose.cursor_position > 0 {
@@ -493,7 +500,7 @@ impl App {
             }
         }
     }
-    
+
     pub fn compose_move_cursor_right(&mut self) {
         if let Some(ref mut compose) = self.compose_state {
             if compose.mode == ComposeMode::Insert {
@@ -527,7 +534,7 @@ impl App {
             if let Some(ref db) = self.db {
                 let draft = self.create_db_draft(compose);
                 let db_clone = db.clone();
-                
+
                 tokio::spawn(async move {
                     match db_clone.save_draft(&draft).await {
                         Ok(_new_id) => {
@@ -539,7 +546,7 @@ impl App {
                         }
                     }
                 });
-                
+
                 self.status_message = Some("Draft saved".to_string());
             }
         }
@@ -548,7 +555,10 @@ impl App {
     /// Save draft before quitting the application (async version)
     pub async fn save_draft_before_quit_async(&self) -> anyhow::Result<()> {
         if let Some(ref compose) = self.compose_state {
-            if !compose.recipients.is_empty() || !compose.subject.is_empty() || !compose.body.is_empty() {
+            if !compose.recipients.is_empty()
+                || !compose.subject.is_empty()
+                || !compose.body.is_empty()
+            {
                 if let Some(ref db) = self.db {
                     let draft = self.create_db_draft(compose);
                     db.save_draft(&draft).await?;
@@ -557,16 +567,18 @@ impl App {
         }
         Ok(())
     }
-    
+
     /// Check if there's a draft that needs saving
     pub fn has_unsaved_draft(&self) -> bool {
         if let Some(ref compose) = self.compose_state {
-            !compose.recipients.is_empty() || !compose.subject.is_empty() || !compose.body.is_empty()
+            !compose.recipients.is_empty()
+                || !compose.subject.is_empty()
+                || !compose.body.is_empty()
         } else {
             false
         }
     }
-    
+
     /// Helper to create a DbDraft from current compose state
     fn create_db_draft(&self, compose: &ComposeState) -> DbDraft {
         DbDraft {
@@ -586,6 +598,10 @@ impl App {
 
     pub fn compose_sign_with_yubikey(&mut self) {
         self.status_message = Some("Yubikey signing hook (stub)".to_string());
+    }
+
+    pub fn toggle_preview_panel(&mut self) {
+        self.show_preview_panel = !self.show_preview_panel;
     }
 
     pub fn quit(&mut self) {
@@ -614,19 +630,19 @@ mod tests {
     fn test_navigation() {
         let mut app = App::new();
         assert_eq!(app.selected_index, 0);
-        
+
         app.next_email();
         assert_eq!(app.selected_index, 1);
-        
+
         app.next_email();
         assert_eq!(app.selected_index, 2);
-        
+
         app.previous_email();
         assert_eq!(app.selected_index, 1);
-        
+
         app.previous_email();
         assert_eq!(app.selected_index, 0);
-        
+
         // Should not go below 0
         app.previous_email();
         assert_eq!(app.selected_index, 0);
@@ -635,12 +651,12 @@ mod tests {
     #[test]
     fn test_navigation_bounds() {
         let mut app = App::new();
-        
+
         // Move to the last email
         for _ in 0..10 {
             app.next_email();
         }
-        
+
         // Should not exceed last index
         assert_eq!(app.selected_index, 4);
     }
@@ -649,13 +665,13 @@ mod tests {
     fn test_view_switching() {
         let mut app = App::new();
         assert_eq!(app.current_view, View::InboxList);
-        
+
         app.open_email();
         assert_eq!(app.current_view, View::EmailDetail);
-        
+
         app.close_email();
         assert_eq!(app.current_view, View::InboxList);
-        
+
         // Opening from detail view should not change
         app.open_email();
         app.open_email();
@@ -665,21 +681,21 @@ mod tests {
     #[test]
     fn test_actions() {
         let mut app = App::new();
-        
+
         app.perform_action(Action::Delete);
         assert!(app.status_message.is_some());
         assert!(app.status_message.as_ref().unwrap().contains("Deleted"));
-        
+
         app.perform_action(Action::Archive);
         assert!(app.status_message.as_ref().unwrap().contains("Archived"));
-        
+
         app.perform_action(Action::Reply);
         assert!(app.status_message.as_ref().unwrap().contains("Replying"));
-        
+
         app.perform_action(Action::Compose);
         assert_eq!(app.current_view, View::Compose);
         assert!(app.compose_state.is_some());
-        
+
         app.exit_compose_mode();
         app.perform_action(Action::Forward);
         assert!(app.status_message.as_ref().unwrap().contains("Forwarding"));
@@ -689,7 +705,7 @@ mod tests {
     fn test_quit() {
         let mut app = App::new();
         assert_eq!(app.should_quit, false);
-        
+
         app.quit();
         assert_eq!(app.should_quit, true);
     }
@@ -697,11 +713,11 @@ mod tests {
     #[test]
     fn test_get_selected_email() {
         let mut app = App::new();
-        
+
         let email = app.get_selected_email();
         assert!(email.is_some());
         assert_eq!(email.unwrap().from, "alice@example.com");
-        
+
         app.next_email();
         let email = app.get_selected_email();
         assert!(email.is_some());
@@ -722,7 +738,7 @@ mod tests {
         assert_eq!(app.current_view, View::InboxList);
         // Compose state is preserved for re-entry (draft behavior)
         assert!(app.compose_state.is_some());
-        
+
         // Re-entering compose mode should restore the same state
         app.enter_compose_mode();
         assert_eq!(app.current_view, View::Compose);
@@ -738,16 +754,28 @@ mod tests {
         assert_eq!(compose.current_field, ComposeField::Recipients);
 
         app.compose_next_field();
-        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Subject);
+        assert_eq!(
+            app.compose_state.as_ref().unwrap().current_field,
+            ComposeField::Subject
+        );
 
         app.compose_next_field();
-        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Body);
+        assert_eq!(
+            app.compose_state.as_ref().unwrap().current_field,
+            ComposeField::Body
+        );
 
         app.compose_next_field();
-        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Recipients);
+        assert_eq!(
+            app.compose_state.as_ref().unwrap().current_field,
+            ComposeField::Recipients
+        );
 
         app.compose_previous_field();
-        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Body);
+        assert_eq!(
+            app.compose_state.as_ref().unwrap().current_field,
+            ComposeField::Body
+        );
     }
 
     #[test]
@@ -755,25 +783,43 @@ mod tests {
         let mut app = App::new();
         app.enter_compose_mode();
 
-        assert_eq!(app.compose_state.as_ref().unwrap().mode, ComposeMode::Normal);
+        assert_eq!(
+            app.compose_state.as_ref().unwrap().mode,
+            ComposeMode::Normal
+        );
 
         app.compose_enter_insert_mode();
-        assert_eq!(app.compose_state.as_ref().unwrap().mode, ComposeMode::Insert);
+        assert_eq!(
+            app.compose_state.as_ref().unwrap().mode,
+            ComposeMode::Insert
+        );
 
         app.compose_exit_insert_mode();
-        assert_eq!(app.compose_state.as_ref().unwrap().mode, ComposeMode::Normal);
+        assert_eq!(
+            app.compose_state.as_ref().unwrap().mode,
+            ComposeMode::Normal
+        );
         // Should auto-advance to Subject during initial traversal
-        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Subject);
-        
+        assert_eq!(
+            app.compose_state.as_ref().unwrap().current_field,
+            ComposeField::Subject
+        );
+
         // Continue to Body
         app.compose_enter_insert_mode();
         app.compose_exit_insert_mode();
-        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Body);
-        
+        assert_eq!(
+            app.compose_state.as_ref().unwrap().current_field,
+            ComposeField::Body
+        );
+
         // Now that we're on Body, traversal is complete - Esc should stay on Body
         app.compose_enter_insert_mode();
         app.compose_exit_insert_mode();
-        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Body);
+        assert_eq!(
+            app.compose_state.as_ref().unwrap().current_field,
+            ComposeField::Body
+        );
     }
 
     #[test]
@@ -808,6 +854,18 @@ mod tests {
     }
 
     #[test]
+    fn test_preview_panel_toggle() {
+        let mut app = App::new();
+        assert_eq!(app.show_preview_panel, false);
+
+        app.toggle_preview_panel();
+        assert_eq!(app.show_preview_panel, true);
+
+        app.toggle_preview_panel();
+        assert_eq!(app.show_preview_panel, false);
+    }
+
+    #[test]
     fn test_compose_clear_field() {
         let mut app = App::new();
         app.enter_compose_mode();
@@ -823,7 +881,10 @@ mod tests {
         // Exit insert mode and clear
         app.compose_exit_insert_mode();
         // Auto-advances to Subject during initial traversal
-        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Subject);
+        assert_eq!(
+            app.compose_state.as_ref().unwrap().current_field,
+            ComposeField::Subject
+        );
         app.compose_previous_field(); // Go back to Recipients
         app.compose_clear_field();
         assert_eq!(app.compose_state.as_ref().unwrap().recipients, "");
@@ -836,12 +897,15 @@ mod tests {
         app.compose_insert_char('b');
         assert_eq!(app.compose_state.as_ref().unwrap().subject, "sub");
         app.compose_exit_insert_mode(); // Auto-advances to Body during initial traversal
-        assert_eq!(app.compose_state.as_ref().unwrap().current_field, ComposeField::Body);
+        assert_eq!(
+            app.compose_state.as_ref().unwrap().current_field,
+            ComposeField::Body
+        );
         app.compose_previous_field(); // Go back to Subject
         app.compose_clear_field();
         assert_eq!(app.compose_state.as_ref().unwrap().subject, "");
     }
-    
+
     #[tokio::test]
     async fn test_draft_save_and_load() {
         // Use a unique database for this test to avoid locking issues
@@ -849,8 +913,10 @@ mod tests {
         let mut path = std::env::temp_dir();
         path.push(format!("test_tume_draft_save_{}.db", test_id));
         let _ = std::fs::remove_file(&path);
-        
-        let db = crate::db::EmailDatabase::new(Some(path.clone())).await.unwrap();
+
+        let db = crate::db::EmailDatabase::new(Some(path.clone()))
+            .await
+            .unwrap();
         let mut app = App {
             emails: Vec::new(),
             current_view: View::InboxList,
@@ -860,8 +926,9 @@ mod tests {
             compose_state: None,
             db: Some(db),
             draft_id: None,
+            show_preview_panel: false,
         };
-        
+
         // Enter compose mode and add some content
         app.enter_compose_mode();
         app.compose_enter_insert_mode();
@@ -870,7 +937,7 @@ mod tests {
         app.compose_insert_char('s');
         app.compose_insert_char('t');
         app.compose_exit_insert_mode(); // Move to subject
-        
+
         app.compose_enter_insert_mode();
         app.compose_insert_char('M');
         app.compose_insert_char('y');
@@ -881,28 +948,28 @@ mod tests {
         app.compose_insert_char('f');
         app.compose_insert_char('t');
         app.compose_exit_insert_mode(); // Move to body
-        
+
         // Manually save the draft
         app.save_current_draft();
-        
+
         // Give async save time to complete
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-        
+
         // Exit compose mode
         app.exit_compose_mode();
-        
+
         // Re-enter compose mode and manually load draft
         app.enter_compose_mode();
         app.load_draft_async().await.unwrap();
-        
+
         let compose = app.compose_state.as_ref().unwrap();
         assert_eq!(compose.recipients, "test");
         assert_eq!(compose.subject, "My Draft");
-        
+
         // Cleanup
         let _ = std::fs::remove_file(&path);
     }
-    
+
     #[tokio::test]
     async fn test_draft_persist_on_exit() {
         // Use a unique database for this test to avoid locking issues
@@ -910,8 +977,10 @@ mod tests {
         let mut path = std::env::temp_dir();
         path.push(format!("test_tume_draft_exit_{}.db", test_id));
         let _ = std::fs::remove_file(&path);
-        
-        let db = crate::db::EmailDatabase::new(Some(path.clone())).await.unwrap();
+
+        let db = crate::db::EmailDatabase::new(Some(path.clone()))
+            .await
+            .unwrap();
         let mut app = App {
             emails: Vec::new(),
             current_view: View::InboxList,
@@ -921,8 +990,9 @@ mod tests {
             compose_state: None,
             db: Some(db),
             draft_id: None,
+            show_preview_panel: false,
         };
-        
+
         // Enter compose mode and add some content
         app.enter_compose_mode();
         app.compose_enter_insert_mode();
@@ -931,23 +1001,22 @@ mod tests {
         app.compose_insert_char('a');
         app.compose_insert_char('f');
         app.compose_insert_char('t');
-        
+
         // Exit compose mode (should auto-save)
         app.compose_exit_insert_mode();
         app.exit_compose_mode();
-        
+
         // Give async save time to complete
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-        
+
         // Re-enter compose mode and manually load draft
         app.enter_compose_mode();
         app.load_draft_async().await.unwrap();
-        
+
         let compose = app.compose_state.as_ref().unwrap();
         assert_eq!(compose.recipients, "draft");
-        
+
         // Cleanup
         let _ = std::fs::remove_file(&path);
     }
 }
-
