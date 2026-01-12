@@ -851,7 +851,8 @@ mod tests {
     async fn test_draft_save_and_load() {
         // Use a unique database for this test to avoid locking issues
         let test_id = std::process::id();
-        let path = std::path::PathBuf::from(format!("/tmp/test_tume_draft_save_{}.db", test_id));
+        let mut path = std::env::temp_dir();
+        path.push(format!("test_tume_draft_save_{}.db", test_id));
         let _ = std::fs::remove_file(&path);
         
         let db = crate::db::EmailDatabase::new(Some(path.clone())).await.unwrap();
@@ -911,7 +912,8 @@ mod tests {
     async fn test_draft_persist_on_exit() {
         // Use a unique database for this test to avoid locking issues
         let test_id = std::process::id();
-        let path = std::path::PathBuf::from(format!("/tmp/test_tume_draft_exit_{}.db", test_id));
+        let mut path = std::env::temp_dir();
+        path.push(format!("test_tume_draft_exit_{}.db", test_id));
         let _ = std::fs::remove_file(&path);
         
         let db = crate::db::EmailDatabase::new(Some(path.clone())).await.unwrap();
