@@ -99,9 +99,11 @@ The main event loop follows this pattern:
 ## Security Considerations
 
 - Never commit secrets or API keys to the repository
-- Handle user input safely (all input is already handled via terminal)
+- User input is validated at the terminal event level by Crossterm - no raw string injection vulnerabilities
+- Ensure proper sanitization when handling email content to prevent command injection or buffer overflows
 - Future SMTP/IMAP integration should use secure connections (TLS)
 - GPG and Yubikey features are currently placeholders - implement with proper key management
+- When adding file operations, validate paths to prevent directory traversal attacks
 
 ## Current Development Status
 
