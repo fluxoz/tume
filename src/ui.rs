@@ -9,6 +9,9 @@ use tui_markdown::from_str;
 
 use crate::app::{App, ComposeField, ComposeMode, View};
 
+// Layout constants
+const MIN_WIDTH_FOR_VERTICAL_SPLIT: u16 = 120;
+
 // Helper function to convert ratatui_core::Color to ratatui::Color
 fn convert_color(core_color: ratatui_core::style::Color) -> Color {
     use ratatui_core::style::Color as CoreColor;
@@ -33,6 +36,24 @@ fn convert_color(core_color: ratatui_core::style::Color) -> Color {
         CoreColor::Rgb(r, g, b) => Color::Rgb(r, g, b),
         CoreColor::Indexed(i) => Color::Indexed(i),
     }
+}
+
+// Helper function to build email metadata display
+fn build_email_metadata<'a>(from: &'a str, subject: &'a str, date: &'a str) -> Vec<Line<'a>> {
+    vec![
+        Line::from(vec![
+            Span::styled("From: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(from),
+        ]),
+        Line::from(vec![
+            Span::styled("Subject: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(subject),
+        ]),
+        Line::from(vec![
+            Span::styled("Date: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(date),
+        ]),
+    ]
 }
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -72,8 +93,8 @@ fn render_inbox(f: &mut Frame, area: Rect, app: &App) {
     // If preview panel is enabled, split the view
     if app.show_preview_panel {
         // Decide on split direction based on terminal dimensions
-        // Use vertical split if width > 120, otherwise horizontal
-        let use_vertical_split = area.width > 120;
+        // Use vertical split if width > threshold, otherwise horizontal
+        let use_vertical_split = area.width > MIN_WIDTH_FOR_VERTICAL_SPLIT;
 
         let chunks = if use_vertical_split {
             // Vertical split: list on left, preview on right
@@ -185,20 +206,7 @@ fn render_inbox_preview(f: &mut Frame, area: Rect, app: &App) {
             .split(area);
 
         // Email metadata
-        let metadata = vec![
-            Line::from(vec![
-                Span::styled("From: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(&email.from),
-            ]),
-            Line::from(vec![
-                Span::styled("Subject: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(&email.subject),
-            ]),
-            Line::from(vec![
-                Span::styled("Date: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(&email.date),
-            ]),
-        ];
+        let metadata = build_email_metadata(&email.from, &email.subject, &email.date);
 
         let metadata_widget =
             Paragraph::new(metadata).block(Block::default().borders(Borders::ALL).title("Preview"));
@@ -225,20 +233,7 @@ fn render_email_detail(f: &mut Frame, area: Rect, app: &App) {
             .split(area);
 
         // Email metadata
-        let metadata = vec![
-            Line::from(vec![
-                Span::styled("From: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(&email.from),
-            ]),
-            Line::from(vec![
-                Span::styled("Subject: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(&email.subject),
-            ]),
-            Line::from(vec![
-                Span::styled("Date: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(&email.date),
-            ]),
-        ];
+        let metadata = build_email_metadata(&email.from, &email.subject, &email.date);
 
         let metadata_widget = Paragraph::new(metadata).block(
             Block::default()
