@@ -58,6 +58,9 @@ fn handle_inbox_keys(app: &mut App, key: KeyEvent) {
         KeyCode::Char('c') => app.perform_action(Action::Compose),
         KeyCode::Char('f') => app.perform_action(Action::Forward),
 
+        // Credentials management
+        KeyCode::Char('m') => app.enter_credentials_management(),
+
         // Quit
         KeyCode::Char('q') => app.quit(),
 
