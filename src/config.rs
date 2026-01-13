@@ -91,7 +91,9 @@ impl Config {
         let config_path = Self::config_path()?;
         
         if !config_path.exists() {
-            // Return default config if file doesn't exist
+            // Generate skeleton config file for user reference
+            Self::generate_skeleton_config(&config_path)?;
+            // Return default config
             return Ok(Self::default());
         }
 
@@ -131,6 +133,100 @@ impl Config {
         path.push("tume");
         path.push("config.toml");
         Ok(path)
+    }
+
+    /// Generate a skeleton config file with all possible values commented out
+    fn generate_skeleton_config(config_path: &PathBuf) -> Result<()> {
+        // Ensure config directory exists
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent)
+                .context("Failed to create config directory")?;
+        }
+
+        let skeleton = r#"# TUME Email Client Configuration
+# This is a skeleton configuration file with all available options.
+# Uncomment and modify the values you want to use.
+
+# ==============================================================================
+# ACCOUNTS CONFIGURATION
+# ==============================================================================
+# Define your email accounts here. Each account should have a unique key
+# (e.g., "work", "personal", "side-project").
+#
+# To add an account, uncomment the section below and fill in your details:
+
+# [accounts.work]
+# name = "Work Gmail"           # Display name for the account
+# email = "work@company.com"    # Email address
+# provider = "gmail"            # Provider type (gmail, outlook, imap, etc.)
+# default = true                # Set one account as default (optional)
+# color = "blue"                # Color for visual indicators (optional)
+# display_order = 1             # Lower numbers appear first (optional)
+
+# [accounts.personal]
+# name = "Personal"
+# email = "me@gmail.com"
+# provider = "gmail"
+# color = "green"
+# display_order = 2
+
+# Add more accounts as needed:
+# [accounts.side]
+# name = "Side Project"
+# email = "side@project.io"
+# provider = "imap"
+# color = "yellow"
+# display_order = 3
+
+# ==============================================================================
+# KEYBINDINGS CONFIGURATION
+# ==============================================================================
+# Customize your keybindings here. All settings are optional and will fall back
+# to sensible defaults if not specified.
+
+# [keybindings]
+# # Keys to switch directly to accounts 1-9
+# switch_account = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+#
+# # Navigate between accounts
+# next_account = "]"            # Cycle to next account
+# prev_account = "["            # Cycle to previous account
+#
+# # Open mailbox picker (future feature)
+# mailbox_picker = "M"
+#
+# # Add new account wizard (future feature)
+# add_account = "A"
+
+# ==============================================================================
+# DEFAULT VALUES
+# ==============================================================================
+# If you don't specify any configuration above, TUME will use these defaults:
+#
+# Keybindings:
+#   - switch_account: ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+#   - next_account: "]"
+#   - prev_account: "["
+#   - mailbox_picker: "M"
+#   - add_account: "A"
+#
+# Note: Tab key also cycles to the next account (not configurable)
+
+# ==============================================================================
+# USAGE NOTES
+# ==============================================================================
+# - Account switching: Press 1-9 to jump directly to an account, or use [ and ]
+#   to cycle through accounts. Tab also cycles to the next account.
+# - The current account is displayed in the header: TUME - [Account Name]
+# - Emails are filtered by the currently selected account
+# - All accounts are synced from this config to the database on startup
+# - To get started, uncomment an account section above and add your details
+"#;
+
+        fs::write(config_path, skeleton)
+            .context("Failed to write skeleton config file")?;
+        
+        Ok(())
     }
 
     /// Get accounts as a sorted vector
@@ -242,5 +338,35 @@ mod tests {
         let default = config.get_default_account();
         assert!(default.is_some());
         assert_eq!(default.unwrap().email, "work@example.com");
+    }
+
+    #[test]
+    fn test_skeleton_config_generation() {
+        use std::fs;
+        use std::path::PathBuf;
+
+        // Create a temporary path for testing
+        let test_path = PathBuf::from("/tmp/test_tume_config_skeleton.toml");
+        
+        // Remove if it exists
+        let _ = fs::remove_file(&test_path);
+        
+        // Generate skeleton
+        let result = Config::generate_skeleton_config(&test_path);
+        assert!(result.is_ok());
+        
+        // Verify file was created
+        assert!(test_path.exists());
+        
+        // Verify content
+        let content = fs::read_to_string(&test_path).unwrap();
+        assert!(content.contains("# TUME Email Client Configuration"));
+        assert!(content.contains("[accounts.work]"));
+        assert!(content.contains("[keybindings]"));
+        assert!(content.contains("# name = \"Work Gmail\""));
+        assert!(content.contains("# switch_account ="));
+        
+        // Cleanup
+        let _ = fs::remove_file(&test_path);
     }
 }
