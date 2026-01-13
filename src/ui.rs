@@ -7,7 +7,8 @@ use ratatui::{
 };
 use tui_markdown::from_str;
 
-use crate::app::{App, ComposeField, ComposeMode, View};
+use crate::app::{App, ComposeField, ComposeMode, View, CredentialField};
+use crate::credentials::StorageBackend;
 
 // Layout constants
 const MIN_WIDTH_FOR_VERTICAL_SPLIT: u16 = 120;
@@ -72,6 +73,9 @@ pub fn draw(f: &mut Frame, app: &App) {
         View::InboxList => render_inbox(f, chunks[1], app),
         View::EmailDetail => render_email_detail(f, chunks[1], app),
         View::Compose => render_compose(f, chunks[1], app),
+        View::CredentialsSetup => render_credentials_setup(f, chunks[1], app),
+        View::CredentialsUnlock => render_credentials_unlock(f, chunks[1], app),
+        View::CredentialsManagement => render_credentials_management(f, chunks[1], app),
     }
 
     render_footer(f, chunks[2], app);
@@ -297,6 +301,15 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
             } else {
                 ""
             }
+        }
+        View::CredentialsSetup => {
+            "Tab/j/k: Navigate fields | Type to edit | P: Toggle password visibility | Enter: Save | Esc: Cancel"
+        }
+        View::CredentialsUnlock => {
+            "Type master password | Enter: Unlock | Esc: Quit"
+        }
+        View::CredentialsManagement => {
+            "r: Reset credentials | Esc: Back to inbox"
         }
     };
 
@@ -527,3 +540,267 @@ fn render_compose(f: &mut Frame, area: Rect, app: &App) {
         }
     }
 }
+
+fn render_credentials_setup(f: &mut Frame, area: Rect, app: &App) {
+    let setup = match &app.credentials_setup_state {
+        Some(s) => s,
+        None => return,
+    };
+
+    let backend = app.credentials_manager
+        .as_ref()
+        .map(|m| m.backend())
+        .unwrap_or(StorageBackend::SystemKeyring);
+
+    // Title with backend info
+    let title = format!(" Credentials Setup - {} ", backend.as_str());
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .style(Style::default().fg(Color::Cyan));
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Split into sections: instructions, form, and backend info
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4),  // Instructions
+            Constraint::Min(10),    // Form fields
+            Constraint::Length(5),  // Backend info
+        ])
+        .split(inner);
+
+    // Render instructions
+    let instructions = vec![
+        Line::from(Span::styled(
+            "Configure your email server credentials",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(backend.description()),
+    ];
+    let instructions_para = Paragraph::new(instructions).wrap(Wrap { trim: false });
+    f.render_widget(instructions_para, chunks[0]);
+
+    // Build field items
+    let mut field_lines = Vec::new();
+    
+    // Pre-compute masked passwords to avoid temporary value issues
+    let imap_pwd_masked = "*".repeat(setup.imap_password.len());
+    let smtp_pwd_masked = "*".repeat(setup.smtp_password.len());
+    let master_pwd_masked = "*".repeat(setup.master_password.len());
+    let master_pwd_confirm_masked = "*".repeat(setup.master_password_confirm.len());
+    
+    // IMAP fields
+    field_lines.push(Line::from(Span::styled("IMAP Configuration", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))));
+    field_lines.push(build_field_line("IMAP Server:", &setup.imap_server, setup.current_field == CredentialField::ImapServer));
+    field_lines.push(build_field_line("IMAP Port:", &setup.imap_port, setup.current_field == CredentialField::ImapPort));
+    field_lines.push(build_field_line("IMAP Username:", &setup.imap_username, setup.current_field == CredentialField::ImapUsername));
+    field_lines.push(build_field_line("IMAP Password:", 
+        if setup.show_passwords { &setup.imap_password } else { &imap_pwd_masked },
+        setup.current_field == CredentialField::ImapPassword));
+    field_lines.push(Line::from(""));
+    
+    // SMTP fields
+    field_lines.push(Line::from(Span::styled("SMTP Configuration", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))));
+    field_lines.push(build_field_line("SMTP Server:", &setup.smtp_server, setup.current_field == CredentialField::SmtpServer));
+    field_lines.push(build_field_line("SMTP Port:", &setup.smtp_port, setup.current_field == CredentialField::SmtpPort));
+    field_lines.push(build_field_line("SMTP Username:", &setup.smtp_username, setup.current_field == CredentialField::SmtpUsername));
+    field_lines.push(build_field_line("SMTP Password:", 
+        if setup.show_passwords { &setup.smtp_password } else { &smtp_pwd_masked },
+        setup.current_field == CredentialField::SmtpPassword));
+    
+    // Master password fields (only for encrypted file backend)
+    if backend == StorageBackend::EncryptedFile {
+        field_lines.push(Line::from(""));
+        field_lines.push(Line::from(Span::styled("Master Password (for encrypted file)", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))));
+        field_lines.push(build_field_line("Master Password:", 
+            if setup.show_passwords { &setup.master_password } else { &master_pwd_masked },
+            setup.current_field == CredentialField::MasterPassword));
+        field_lines.push(build_field_line("Confirm Password:", 
+            if setup.show_passwords { &setup.master_password_confirm } else { &master_pwd_confirm_masked },
+            setup.current_field == CredentialField::MasterPasswordConfirm));
+    }
+
+    let fields_para = Paragraph::new(field_lines).wrap(Wrap { trim: false });
+    f.render_widget(fields_para, chunks[1]);
+
+    // Render backend info
+    let backend_info = vec![
+        Line::from(""),
+        Line::from(Span::styled("Tip:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
+        Line::from(format!("  Press 'P' to toggle password visibility")),
+        Line::from(format!("  Press 'Enter' to save credentials")),
+    ];
+    let info_para = Paragraph::new(backend_info).wrap(Wrap { trim: false });
+    f.render_widget(info_para, chunks[2]);
+}
+
+fn build_field_line<'a>(label: &'a str, value: &'a str, is_active: bool) -> Line<'a> {
+    let style = if is_active {
+        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    
+    let marker = if is_active { "▸ " } else { "  " };
+    Line::from(vec![
+        Span::styled(marker, style),
+        Span::styled(format!("{:<20}", label), Style::default().add_modifier(Modifier::DIM)),
+        Span::styled(value, style),
+    ])
+}
+
+fn render_credentials_unlock(f: &mut Frame, area: Rect, app: &App) {
+    let unlock = match &app.credentials_unlock_state {
+        Some(u) => u,
+        None => return,
+    };
+
+    // Center the unlock dialog
+    let dialog_width = 60.min(area.width.saturating_sub(4));
+    let dialog_height = 12.min(area.height.saturating_sub(4));
+    let dialog_x = (area.width.saturating_sub(dialog_width)) / 2;
+    let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
+
+    let dialog_area = Rect {
+        x: area.x + dialog_x,
+        y: area.y + dialog_y,
+        width: dialog_width,
+        height: dialog_height,
+    };
+
+    // Clear background
+    let clear_widget = Block::default().style(Style::default().bg(Color::Black));
+    f.render_widget(clear_widget, area);
+
+    // Render dialog
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Unlock Credentials ")
+        .style(Style::default().fg(Color::Cyan));
+
+    let inner = block.inner(dialog_area);
+    f.render_widget(block, dialog_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),  // Instructions
+            Constraint::Length(1),  // Spacing
+            Constraint::Length(3),  // Password field
+            Constraint::Length(1),  // Spacing
+            Constraint::Min(1),     // Error message or tip
+        ])
+        .split(inner);
+
+    // Instructions
+    let instructions = vec![
+        Line::from("Your credentials are stored in an encrypted file."),
+        Line::from("Enter your master password to unlock them."),
+    ];
+    let instructions_para = Paragraph::new(instructions)
+        .style(Style::default().fg(Color::White));
+    f.render_widget(instructions_para, chunks[0]);
+
+    // Password field
+    let password_display = "*".repeat(unlock.master_password.len());
+    let password_field = Paragraph::new(vec![
+        Line::from(Span::styled("Master Password:", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            password_display,
+            Style::default().fg(Color::Green),
+        )),
+    ])
+    .block(Block::default().borders(Borders::ALL));
+    f.render_widget(password_field, chunks[2]);
+
+    // Error message or tip
+    let message = if let Some(ref err) = unlock.error_message {
+        vec![Line::from(Span::styled(
+            err,
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ))]
+    } else {
+        vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "Press Enter to unlock, Esc to quit",
+                Style::default().fg(Color::DarkGray),
+            )),
+        ]
+    };
+    let message_para = Paragraph::new(message);
+    f.render_widget(message_para, chunks[4]);
+
+    // Set cursor position in password field
+    let password_field_inner = Block::default().borders(Borders::ALL).inner(chunks[2]);
+    f.set_cursor_position((
+        password_field_inner.x + unlock.cursor_position as u16,
+        password_field_inner.y + 1,
+    ));
+}
+
+fn render_credentials_management(f: &mut Frame, area: Rect, app: &App) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Credentials Management ")
+        .style(Style::default().fg(Color::Cyan));
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),  // Title
+            Constraint::Length(5),  // Backend info
+            Constraint::Min(1),     // Actions
+        ])
+        .split(inner);
+
+    // Title
+    let title = vec![
+        Line::from(Span::styled(
+            "Manage Your Credentials",
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+    let title_para = Paragraph::new(title);
+    f.render_widget(title_para, chunks[0]);
+
+    // Backend info
+    let (backend, description) = app.get_backend_info()
+        .unwrap_or((StorageBackend::SystemKeyring, "Unknown".to_string()));
+    
+    let backend_info = vec![
+        Line::from(vec![
+            Span::styled("Current Backend: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(backend.as_str(), Style::default().fg(Color::Green)),
+        ]),
+        Line::from(""),
+        Line::from(description),
+    ];
+    let info_para = Paragraph::new(backend_info).wrap(Wrap { trim: false });
+    f.render_widget(info_para, chunks[1]);
+
+    // Actions
+    let actions = vec![
+        Line::from(""),
+        Line::from(Span::styled("Available Actions:", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(""),
+        Line::from("  r - Reset credentials (delete current and set up new ones)"),
+        Line::from("  Esc - Return to inbox"),
+        Line::from(""),
+        Line::from(Span::styled(
+            "⚠ Warning: Resetting credentials will require you to reconfigure your email settings",
+            Style::default().fg(Color::Yellow),
+        )),
+    ];
+    let actions_para = Paragraph::new(actions);
+    f.render_widget(actions_para, chunks[2]);
+}
+
