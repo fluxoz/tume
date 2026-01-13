@@ -26,6 +26,12 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
 }
 
 fn handle_inbox_keys(app: &mut App, key: KeyEvent) {
+    // Check if in visual mode
+    if app.visual_mode {
+        handle_visual_mode_keys(app, key);
+        return;
+    }
+
     match key.code {
         // Vim-style navigation
         KeyCode::Char('j') | KeyCode::Down => app.next_email(),
@@ -37,6 +43,11 @@ fn handle_inbox_keys(app: &mut App, key: KeyEvent) {
         // Toggle preview panel
         KeyCode::Char('p') => app.toggle_preview_panel(),
 
+        // Enter visual mode with Shift+V (uppercase V)
+        KeyCode::Char('V') => {
+            app.enter_visual_mode();
+        }
+
         // Actions
         KeyCode::Char('d') => app.perform_action(Action::Delete),
         KeyCode::Char('a') => app.perform_action(Action::Archive),
@@ -46,6 +57,23 @@ fn handle_inbox_keys(app: &mut App, key: KeyEvent) {
 
         // Quit
         KeyCode::Char('q') | KeyCode::Esc => app.quit(),
+
+        _ => {}
+    }
+}
+
+fn handle_visual_mode_keys(app: &mut App, key: KeyEvent) {
+    match key.code {
+        // Vim-style navigation (extend selection)
+        KeyCode::Char('j') | KeyCode::Down => app.next_email(),
+        KeyCode::Char('k') | KeyCode::Up => app.previous_email(),
+
+        // Batch actions
+        KeyCode::Char('d') => app.perform_batch_action(Action::Delete),
+        KeyCode::Char('a') => app.perform_batch_action(Action::Archive),
+
+        // Exit visual mode
+        KeyCode::Esc | KeyCode::Char('v') | KeyCode::Char('V') => app.exit_visual_mode(),
 
         _ => {}
     }

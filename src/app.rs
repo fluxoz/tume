@@ -1,4 +1,5 @@
 use crate::db::{DbDraft, DbEmail, EmailDatabase, EmailStatus as DbEmailStatus};
+use std::collections::HashSet;
 use std::fmt;
 
 #[derive(Debug, Clone)]
@@ -74,6 +75,9 @@ pub struct App {
     pub db: Option<EmailDatabase>,
     pub draft_id: Option<i64>,
     pub show_preview_panel: bool,
+    pub visual_mode: bool,
+    pub visual_selections: HashSet<usize>,
+    pub visual_anchor: Option<usize>,
 }
 
 impl App {
@@ -88,6 +92,9 @@ impl App {
             db: None,
             draft_id: None,
             show_preview_panel: false,
+            visual_mode: false,
+            visual_selections: HashSet::new(),
+            visual_anchor: None,
         }
     }
 
@@ -150,6 +157,9 @@ impl App {
             db: Some(db),
             draft_id,
             show_preview_panel: false,
+            visual_mode: false,
+            visual_selections: HashSet::new(),
+            visual_anchor: None,
         })
     }
 
@@ -201,12 +211,20 @@ impl App {
     pub fn next_email(&mut self) {
         if !self.emails.is_empty() {
             self.selected_index = (self.selected_index + 1).min(self.emails.len() - 1);
+            // Update visual selection if in visual mode
+            if self.visual_mode {
+                self.update_visual_selection();
+            }
         }
     }
 
     pub fn previous_email(&mut self) {
         if self.selected_index > 0 {
             self.selected_index -= 1;
+            // Update visual selection if in visual mode
+            if self.visual_mode {
+                self.update_visual_selection();
+            }
         }
     }
 
@@ -604,6 +622,109 @@ impl App {
         self.show_preview_panel = !self.show_preview_panel;
     }
 
+    // Visual mode methods
+    pub fn enter_visual_mode(&mut self) {
+        if self.current_view == View::InboxList && !self.visual_mode {
+            self.visual_mode = true;
+            self.visual_anchor = Some(self.selected_index);
+            self.visual_selections.clear();
+            self.visual_selections.insert(self.selected_index);
+            self.status_message = Some("-- VISUAL LINE --".to_string());
+        }
+    }
+
+    pub fn exit_visual_mode(&mut self) {
+        self.visual_mode = false;
+        self.visual_selections.clear();
+        self.visual_anchor = None;
+        // Don't clear status message here - it may contain action results
+    }
+
+    pub fn update_visual_selection(&mut self) {
+        if let Some(anchor) = self.visual_anchor {
+            self.visual_selections.clear();
+            let start = anchor.min(self.selected_index);
+            let end = anchor.max(self.selected_index);
+            for i in start..=end {
+                self.visual_selections.insert(i);
+            }
+        }
+    }
+
+    pub fn perform_batch_action(&mut self, action: Action) {
+        if !self.visual_mode || self.visual_selections.is_empty() {
+            return;
+        }
+
+        let count = self.visual_selections.len();
+        let action_name = match action {
+            Action::Delete => "Deleted",
+            Action::Archive => "Archived",
+            _ => return, // Only delete and archive are supported for batch
+        };
+
+        // Get the email IDs and indices to operate on (sorted in reverse to safely remove)
+        let mut indices: Vec<usize> = self.visual_selections.iter().copied().collect();
+        indices.sort_by(|a, b| b.cmp(a)); // Sort descending
+
+        // Collect email IDs and perform database operations
+        let mut email_ids = Vec::new();
+        for &index in &indices {
+            if let Some(email) = self.emails.get(index) {
+                email_ids.push(email.id);
+            }
+        }
+
+        // Perform database operations
+        if let Some(ref db) = self.db {
+            let db_clone = db.clone();
+            match action {
+                Action::Delete => {
+                    tokio::spawn(async move {
+                        for email_id in email_ids {
+                            if let Err(e) = db_clone.delete_email(email_id).await {
+                                eprintln!("Failed to delete email from database: {}", e);
+                            }
+                        }
+                    });
+                }
+                Action::Archive => {
+                    tokio::spawn(async move {
+                        for email_id in email_ids {
+                            if let Err(e) = db_clone.archive_email(email_id).await {
+                                eprintln!("Failed to archive email in database: {}", e);
+                            }
+                        }
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        // Remove emails from the vector (in reverse order to maintain valid indices)
+        for &index in &indices {
+            if index < self.emails.len() {
+                self.emails.remove(index);
+            }
+        }
+
+        self.status_message = Some(format!("{} {} emails", action_name, count));
+        
+        // Adjust selected_index if needed
+        if !self.emails.is_empty() {
+            self.selected_index = self.selected_index.min(self.emails.len() - 1);
+        } else {
+            self.selected_index = 0;
+        }
+        
+        // Exit visual mode after performing action
+        self.exit_visual_mode();
+    }
+
+    pub fn is_email_selected(&self, index: usize) -> bool {
+        self.visual_selections.contains(&index)
+    }
+
     pub fn quit(&mut self) {
         self.should_quit = true;
     }
@@ -927,6 +1048,9 @@ mod tests {
             db: Some(db),
             draft_id: None,
             show_preview_panel: false,
+            visual_mode: false,
+            visual_selections: HashSet::new(),
+            visual_anchor: None,
         };
 
         // Enter compose mode and add some content
@@ -991,6 +1115,9 @@ mod tests {
             db: Some(db),
             draft_id: None,
             show_preview_panel: false,
+            visual_mode: false,
+            visual_selections: HashSet::new(),
+            visual_anchor: None,
         };
 
         // Enter compose mode and add some content
@@ -1018,5 +1145,152 @@ mod tests {
 
         // Cleanup
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_visual_mode_enter_exit() {
+        let mut app = App::new();
+        assert_eq!(app.visual_mode, false);
+        assert_eq!(app.visual_selections.len(), 0);
+
+        // Enter visual mode
+        app.enter_visual_mode();
+        assert_eq!(app.visual_mode, true);
+        assert_eq!(app.visual_selections.len(), 1);
+        assert!(app.visual_selections.contains(&0));
+        assert_eq!(app.visual_anchor, Some(0));
+
+        // Exit visual mode
+        app.exit_visual_mode();
+        assert_eq!(app.visual_mode, false);
+        assert_eq!(app.visual_selections.len(), 0);
+        assert_eq!(app.visual_anchor, None);
+    }
+
+    #[test]
+    fn test_visual_mode_selection_extension() {
+        let mut app = App::new();
+        
+        // Enter visual mode at index 0
+        app.enter_visual_mode();
+        assert_eq!(app.visual_selections.len(), 1);
+        assert!(app.visual_selections.contains(&0));
+
+        // Move down (extends selection)
+        app.next_email();
+        assert_eq!(app.selected_index, 1);
+        assert_eq!(app.visual_selections.len(), 2);
+        assert!(app.visual_selections.contains(&0));
+        assert!(app.visual_selections.contains(&1));
+
+        // Move down again
+        app.next_email();
+        assert_eq!(app.selected_index, 2);
+        assert_eq!(app.visual_selections.len(), 3);
+        assert!(app.visual_selections.contains(&0));
+        assert!(app.visual_selections.contains(&1));
+        assert!(app.visual_selections.contains(&2));
+
+        // Move back up (shrinks selection)
+        app.previous_email();
+        assert_eq!(app.selected_index, 1);
+        assert_eq!(app.visual_selections.len(), 2);
+        assert!(app.visual_selections.contains(&0));
+        assert!(app.visual_selections.contains(&1));
+        assert!(!app.visual_selections.contains(&2));
+    }
+
+    #[test]
+    fn test_visual_mode_batch_delete() {
+        let mut app = App::new();
+        let initial_count = app.emails.len();
+        
+        // Enter visual mode and select multiple emails
+        app.enter_visual_mode();
+        app.next_email();
+        app.next_email();
+        assert_eq!(app.visual_selections.len(), 3);
+
+        // Perform batch delete
+        app.perform_batch_action(Action::Delete);
+        
+        // Visual mode should be exited
+        assert_eq!(app.visual_mode, false);
+        assert_eq!(app.visual_selections.len(), 0);
+        
+        // Emails should be removed from the list
+        assert_eq!(app.emails.len(), initial_count - 3);
+        
+        // Status message should be set
+        assert!(app.status_message.is_some());
+        assert!(app.status_message.as_ref().unwrap().contains("Deleted"));
+        assert!(app.status_message.as_ref().unwrap().contains("3"));
+    }
+
+    #[test]
+    fn test_visual_mode_batch_archive() {
+        let mut app = App::new();
+        let initial_count = app.emails.len();
+        
+        // Enter visual mode and select multiple emails
+        app.enter_visual_mode();
+        app.next_email();
+        assert_eq!(app.visual_selections.len(), 2);
+
+        // Perform batch archive
+        app.perform_batch_action(Action::Archive);
+        
+        // Visual mode should be exited
+        assert_eq!(app.visual_mode, false);
+        assert_eq!(app.visual_selections.len(), 0);
+        
+        // Emails should be removed from the list
+        assert_eq!(app.emails.len(), initial_count - 2);
+        
+        // Status message should be set
+        assert!(app.status_message.is_some());
+        assert!(app.status_message.as_ref().unwrap().contains("Archived"));
+        assert!(app.status_message.as_ref().unwrap().contains("2"));
+    }
+
+    #[test]
+    fn test_is_email_selected() {
+        let mut app = App::new();
+        
+        // Initially nothing is selected
+        assert!(!app.is_email_selected(0));
+        assert!(!app.is_email_selected(1));
+
+        // Enter visual mode
+        app.enter_visual_mode();
+        assert!(app.is_email_selected(0));
+        assert!(!app.is_email_selected(1));
+
+        // Extend selection
+        app.next_email();
+        assert!(app.is_email_selected(0));
+        assert!(app.is_email_selected(1));
+        assert!(!app.is_email_selected(2));
+    }
+
+    #[test]
+    fn test_visual_mode_only_in_inbox() {
+        let mut app = App::new();
+        
+        // Switch to detail view
+        app.open_email();
+        assert_eq!(app.current_view, View::EmailDetail);
+        
+        // Try to enter visual mode (should not work)
+        app.enter_visual_mode();
+        assert_eq!(app.visual_mode, false);
+        
+        // Go back to inbox
+        app.close_email();
+        assert_eq!(app.current_view, View::InboxList);
+        
+        // Now it should work
+        app.enter_visual_mode();
+        assert_eq!(app.visual_mode, true);
     }
 }
