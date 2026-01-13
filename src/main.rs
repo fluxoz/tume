@@ -17,7 +17,7 @@ use app::App;
 async fn main() -> Result<()> {
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
-    let dev_mode = args.contains(&"--dev".to_string());
+    let dev_mode = args.iter().any(|arg| arg == "--dev");
 
     // Setup terminal
     enable_raw_mode()?;
