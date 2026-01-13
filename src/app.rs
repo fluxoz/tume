@@ -99,13 +99,18 @@ impl App {
     }
 
     /// Initialize the app with database support
-    pub async fn with_database() -> anyhow::Result<Self> {
+    pub async fn with_database(dev_mode: bool) -> anyhow::Result<Self> {
         let db = EmailDatabase::new(None).await?;
+
+        // In dev mode, clear and reseed the inbox for testing
+        if dev_mode {
+            db.clear_inbox().await?;
+        }
 
         // Load emails from database or populate with mock data if empty
         let db_emails = db.get_emails_by_folder("inbox").await?;
         let emails = if db_emails.is_empty() {
-            // Populate with mock data on first run
+            // Populate with mock data on first run or after clearing in dev mode
             let mock_emails = Self::mock_emails();
             for email in &mock_emails {
                 let db_email = DbEmail {

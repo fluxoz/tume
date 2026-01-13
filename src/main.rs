@@ -15,6 +15,10 @@ use app::App;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Parse command line arguments
+    let args: Vec<String> = std::env::args().collect();
+    let dev_mode = args.iter().any(|arg| arg == "--dev");
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -23,7 +27,7 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // Create app state with database
-    let mut app = App::with_database().await.unwrap_or_else(|e| {
+    let mut app = App::with_database(dev_mode).await.unwrap_or_else(|e| {
         eprintln!(
             "Warning: Failed to initialize database: {}. Using in-memory mode.",
             e
