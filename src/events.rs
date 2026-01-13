@@ -56,7 +56,7 @@ fn handle_inbox_keys(app: &mut App, key: KeyEvent) {
         KeyCode::Char('f') => app.perform_action(Action::Forward),
 
         // Quit
-        KeyCode::Char('q') | KeyCode::Esc => app.quit(),
+        KeyCode::Char('q') => app.quit(),
 
         _ => {}
     }
