@@ -528,6 +528,19 @@ impl EmailDatabase {
 
         Ok(emails)
     }
+
+    /// Clear all emails from the inbox folder (for development/testing)
+    pub async fn clear_inbox(&self) -> Result<()> {
+        self.conn
+            .execute(
+                "DELETE FROM emails WHERE folder = 'inbox'",
+                (),
+            )
+            .await
+            .context("Failed to clear inbox")?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -757,5 +770,35 @@ mod tests {
 
         let results = db.search_emails("alice").await.unwrap();
         assert_eq!(results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_clear_inbox() {
+        let db = create_test_db().await.unwrap();
+
+        let email = DbEmail {
+            id: 0,
+            from_address: "test@example.com".to_string(),
+            to_addresses: "me@example.com".to_string(),
+            cc_addresses: None,
+            bcc_addresses: None,
+            subject: "Test".to_string(),
+            body: "Body".to_string(),
+            preview: "Body".to_string(),
+            date: "2026-01-12 12:00".to_string(),
+            status: EmailStatus::Unread,
+            is_flagged: false,
+            folder: "inbox".to_string(),
+            thread_id: None,
+        };
+
+        db.insert_email(&email).await.unwrap();
+        let emails = db.get_emails_by_folder("inbox").await.unwrap();
+        assert_eq!(emails.len(), 1);
+
+        // Clear inbox
+        db.clear_inbox().await.unwrap();
+        let emails = db.get_emails_by_folder("inbox").await.unwrap();
+        assert_eq!(emails.len(), 0);
     }
 }
