@@ -1247,6 +1247,9 @@ mod tests {
             visual_mode: false,
             visual_selections: HashSet::new(),
             visual_anchor: None,
+            config: Config::default(),
+            accounts: Vec::new(),
+            current_account_id: None,
         };
 
         // Enter compose mode and add some content
@@ -1314,6 +1317,9 @@ mod tests {
             visual_mode: false,
             visual_selections: HashSet::new(),
             visual_anchor: None,
+            config: Config::default(),
+            accounts: Vec::new(),
+            current_account_id: None,
         };
 
         // Enter compose mode and add some content
