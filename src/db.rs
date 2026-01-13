@@ -969,6 +969,7 @@ mod tests {
             body: "Draft body".to_string(),
             created_at: String::new(),
             updated_at: String::new(),
+            account_id: None,
         };
 
         let id = db.save_draft(&draft).await.unwrap();
