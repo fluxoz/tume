@@ -33,6 +33,18 @@ cargo run
 
 ## Usage
 
+### Running the Application
+
+```bash
+# Normal mode
+cargo run
+
+# Development mode (reseeds inbox with test emails on startup)
+cargo run -- --dev
+```
+
+The `--dev` flag is useful for development and testing. It clears and reseeds the inbox with mock emails every time the application starts, ensuring a consistent test environment.
+
 ### Inbox View (Main Screen)
 
 The inbox displays a list of emails with the following information:
