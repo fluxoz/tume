@@ -284,7 +284,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
             if app.visual_mode {
                 "j/k: Extend selection | d: Delete selected | a: Archive selected | Esc: Exit visual mode"
             } else {
-                "j/k: Navigate | Enter/l: Read | V: Visual | p: Preview | d: Delete | a: Archive | c: Compose | m: Credentials | q: Quit"
+                "j/k: Navigate | Enter/l: Read | V: Visual mode | p: Preview | d: Delete | a: Archive | c: Compose | m: Creds | q: Quit"
             }
         }
         View::EmailDetail => {
@@ -737,8 +737,9 @@ fn render_credentials_unlock(f: &mut Frame, area: Rect, app: &App) {
 
     // Set cursor position in password field
     let password_field_inner = Block::default().borders(Borders::ALL).inner(chunks[2]);
+    let cursor_x = password_field_inner.x.saturating_add(unlock.cursor_position.min(u16::MAX as usize) as u16);
     f.set_cursor_position((
-        password_field_inner.x + unlock.cursor_position as u16,
+        cursor_x.min(password_field_inner.right().saturating_sub(1)),
         password_field_inner.y + 1,
     ));
 }

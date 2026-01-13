@@ -23,12 +23,10 @@ pub struct Credentials {
     pub imap_server: String,
     pub imap_port: u16,
     pub imap_username: String,
-    #[zeroize(skip)]  // Skip zeroizing String wrapper, inner data will be zeroized
     pub imap_password: String,
     pub smtp_server: String,
     pub smtp_port: u16,
     pub smtp_username: String,
-    #[zeroize(skip)]
     pub smtp_password: String,
 }
 
