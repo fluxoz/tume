@@ -127,7 +127,21 @@ fn render_inbox_list(f: &mut Frame, area: Rect, app: &App) {
         .iter()
         .enumerate()
         .map(|(i, email)| {
-            let style = if i == app.selected_index {
+            // Determine style based on visual selection and cursor position
+            let style = if i == app.selected_index && app.is_email_selected(i) {
+                // Cursor position within visual selection - use a distinct color
+                Style::default()
+                    .bg(Color::Cyan)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD)
+            } else if app.is_email_selected(i) {
+                // In visual mode and selected (but not cursor)
+                Style::default()
+                    .bg(Color::Blue)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else if i == app.selected_index {
+                // Cursor position (not selected in visual mode)
                 Style::default()
                     .bg(Color::DarkGray)
                     .fg(Color::White)
@@ -189,10 +203,16 @@ fn render_inbox_list(f: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
 
+    let title = if app.visual_mode {
+        format!("Inbox - VISUAL LINE ({} selected)", app.visual_selections.len())
+    } else {
+        "Inbox (j/k to navigate, Enter to read, V for visual mode, q to quit)".to_string()
+    };
+
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
-            .title("Inbox (j/k to navigate, Enter to read, q to quit)"),
+            .title(title),
     );
 
     f.render_widget(list, area);
@@ -257,7 +277,11 @@ fn render_email_detail(f: &mut Frame, area: Rect, app: &App) {
 fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     let help_text = match app.current_view {
         View::InboxList => {
-            "j/k: Navigate | Enter/l: Read | p: Preview | d: Delete | a: Archive | r: Reply | c: Compose | f: Forward | q: Quit"
+            if app.visual_mode {
+                "j/k: Extend selection | d: Delete selected | a: Archive selected | Esc: Exit visual mode"
+            } else {
+                "j/k: Navigate | Enter/l: Read | V: Visual mode | p: Preview | d: Delete | a: Archive | c: Compose | q: Quit"
+            }
         }
         View::EmailDetail => {
             "h/Esc: Back | d: Delete | a: Archive | r: Reply | f: Forward | q: Quit"
