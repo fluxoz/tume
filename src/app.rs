@@ -246,8 +246,8 @@ impl App {
                 if !self.emails.is_empty() {
                     let email = &self.emails[self.selected_index];
                     let email_id = email.id;
-                    self.status_message = Some(format!("Deleted email: {}", email.subject));
-
+                    let email_subject = email.subject.clone();
+                    
                     // Delete from database if available
                     // Note: Using fire-and-forget pattern as this is a background operation.
                     // The UI state is updated immediately for responsiveness. If the database
@@ -260,14 +260,26 @@ impl App {
                             }
                         });
                     }
+                    
+                    // Remove email from the vector
+                    self.emails.remove(self.selected_index);
+                    
+                    // Adjust selected_index if needed
+                    if !self.emails.is_empty() {
+                        self.selected_index = self.selected_index.min(self.emails.len() - 1);
+                    } else {
+                        self.selected_index = 0;
+                    }
+                    
+                    self.status_message = Some(format!("Deleted email: {}", email_subject));
                 }
             }
             Action::Archive => {
                 if !self.emails.is_empty() {
                     let email = &self.emails[self.selected_index];
                     let email_id = email.id;
-                    self.status_message = Some(format!("Archived email: {}", email.subject));
-
+                    let email_subject = email.subject.clone();
+                    
                     // Archive in database if available
                     // Note: Using fire-and-forget pattern for background database operation.
                     if let Some(ref db) = self.db {
@@ -278,6 +290,18 @@ impl App {
                             }
                         });
                     }
+                    
+                    // Remove email from the vector
+                    self.emails.remove(self.selected_index);
+                    
+                    // Adjust selected_index if needed
+                    if !self.emails.is_empty() {
+                        self.selected_index = self.selected_index.min(self.emails.len() - 1);
+                    } else {
+                        self.selected_index = 0;
+                    }
+                    
+                    self.status_message = Some(format!("Archived email: {}", email_subject));
                 }
             }
             Action::Reply => {
