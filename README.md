@@ -55,7 +55,7 @@ The inbox displays a list of emails with the following information:
 | `r` | Reply to email (placeholder) |
 | `c` | Compose new email |
 | `f` | Forward email (placeholder) |
-| `q` or `Esc` | Quit application |
+| `q` | Quit application |
 
 #### Visual Line Mode
 
