@@ -15,7 +15,7 @@ A Terminal User Interface (TUI) email client built with Rust, featuring vim-styl
 - **Markdown Support**: Compose emails with markdown and preview rendering
 - **Draft Management**: Auto-save drafts on exit, restore on re-entry, with explicit save option
 - **Local Database**: Email and draft storage using Turso/libSQL at `~/.local/share/tume/mail.db`
-- **Email Actions**: Delete, archive, reply, forward emails (placeholder implementations)
+- **Email Actions**: Delete, archive, reply, forward emails (reply and forward are placeholders)
 
 ## Installation
 
@@ -50,8 +50,8 @@ The inbox displays a list of emails with the following information:
 | `Enter` or `l` | Open selected email |
 | `V` (Shift+V) | Enter visual line mode for batch operations |
 | `p` | Toggle preview panel |
-| `d` | Delete email (placeholder) |
-| `a` | Archive email (placeholder) |
+| `d` | Delete email |
+| `a` | Archive email |
 | `r` | Reply to email (placeholder) |
 | `c` | Compose new email |
 | `f` | Forward email (placeholder) |
@@ -100,8 +100,8 @@ When you open an email, you'll see:
 | Key | Action |
 |-----|--------|
 | `h` or `Esc` | Go back to inbox |
-| `d` | Delete email (placeholder) |
-| `a` | Archive email (placeholder) |
+| `d` | Delete email |
+| `a` | Archive email |
 | `r` | Reply to email (placeholder) |
 | `f` | Forward email (placeholder) |
 | `q` | Quit application |
@@ -248,13 +248,12 @@ The application is structured into several modules:
 - ✅ Vim-style keybindings throughout
 - ✅ Visual line mode for batch operations (Shift+V)
 - ✅ Batch delete and archive operations
+- ✅ Single delete and archive operations
 - ✅ Draft management (auto-save, restore, explicit save with 'w')
 - ✅ Local database storage for emails and drafts
 - ✅ GPG and Yubikey hooks (stubs for future encryption/signing)
 
 ### Placeholder Features
-- Email deletion (shows status message)
-- Email archiving (shows status message)
 - Reply functionality (shows status message)
 - Forward email (shows status message)
 - Actual sending of composed emails
