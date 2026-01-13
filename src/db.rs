@@ -53,6 +53,7 @@ pub struct DbEmail {
     pub is_flagged: bool,
     pub folder: String,
     pub thread_id: Option<String>,
+    pub account_id: Option<i64>,
 }
 
 /// Database representation of a draft email
@@ -64,6 +65,7 @@ pub struct DbDraft {
     pub body: String,
     pub created_at: String,
     pub updated_at: String,
+    pub account_id: Option<i64>,
 }
 
 /// Database representation of a folder/label
@@ -71,6 +73,18 @@ pub struct DbDraft {
 pub struct DbFolder {
     pub id: i64,
     pub name: String,
+    pub display_order: i64,
+}
+
+/// Database representation of an account
+#[derive(Debug, Clone)]
+pub struct DbAccount {
+    pub id: i64,
+    pub name: String,
+    pub email: String,
+    pub provider: String,
+    pub is_default: bool,
+    pub color: Option<String>,
     pub display_order: i64,
 }
 
@@ -176,6 +190,51 @@ impl EmailDatabase {
             .await
             .context("Failed to create attachments table")?;
 
+        // Create accounts table
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS accounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    email TEXT NOT NULL UNIQUE,
+                    provider TEXT NOT NULL,
+                    is_default INTEGER NOT NULL DEFAULT 0,
+                    color TEXT,
+                    display_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )",
+                (),
+            )
+            .await
+            .context("Failed to create accounts table")?;
+
+        // Add account_id column to emails if it doesn't exist (migration)
+        // Note: SQLite doesn't support ALTER TABLE ADD COLUMN IF NOT EXISTS directly,
+        // so we need to check if the column exists first
+        let column_exists = self.check_column_exists("emails", "account_id").await?;
+        if !column_exists {
+            self.conn
+                .execute(
+                    "ALTER TABLE emails ADD COLUMN account_id INTEGER REFERENCES accounts(id)",
+                    (),
+                )
+                .await
+                .context("Failed to add account_id to emails table")?;
+        }
+
+        // Add account_id column to drafts if it doesn't exist (migration)
+        let draft_column_exists = self.check_column_exists("drafts", "account_id").await?;
+        if !draft_column_exists {
+            self.conn
+                .execute(
+                    "ALTER TABLE drafts ADD COLUMN account_id INTEGER REFERENCES accounts(id)",
+                    (),
+                )
+                .await
+                .context("Failed to add account_id to drafts table")?;
+        }
+
         // Create indexes for better query performance
         self.conn
             .execute(
@@ -201,10 +260,39 @@ impl EmailDatabase {
             .await
             .context("Failed to create date index")?;
 
+        self.conn
+            .execute(
+                "CREATE INDEX IF NOT EXISTS idx_emails_account_id ON emails(account_id)",
+                (),
+            )
+            .await
+            .context("Failed to create account_id index")?;
+
         // Initialize default folders if they don't exist
         self.initialize_default_folders().await?;
 
         Ok(())
+    }
+
+    /// Check if a column exists in a table
+    async fn check_column_exists(&self, table: &str, column: &str) -> Result<bool> {
+        let mut rows = self
+            .conn
+            .query(
+                &format!("PRAGMA table_info({})", table),
+                (),
+            )
+            .await
+            .context("Failed to query table info")?;
+
+        while let Some(row) = rows.next().await? {
+            let col_name: String = row.get(1)?;
+            if col_name == column {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     /// Initialize default folders (inbox, sent, drafts, trash, archive)
@@ -235,8 +323,8 @@ impl EmailDatabase {
         self.conn
             .execute(
                 "INSERT INTO emails (from_address, to_addresses, cc_addresses, bcc_addresses, 
-                                     subject, body, preview, date, status, is_flagged, folder, thread_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                                     subject, body, preview, date, status, is_flagged, folder, thread_id, account_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 libsql::params![
                     email.from_address.as_str(),
                     email.to_addresses.as_str(),
@@ -250,6 +338,7 @@ impl EmailDatabase {
                     email.is_flagged as i64,
                     email.folder.as_str(),
                     email.thread_id.as_deref(),
+                    email.account_id,
                 ],
             )
             .await
@@ -264,7 +353,7 @@ impl EmailDatabase {
             .conn
             .query(
                 "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
-                        subject, body, preview, date, status, is_flagged, folder, thread_id
+                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id
                  FROM emails
                  WHERE folder = ?1 AND status != 'deleted'
                  ORDER BY date DESC",
@@ -289,6 +378,7 @@ impl EmailDatabase {
                 is_flagged: row.get::<i64>(10)? != 0,
                 folder: row.get(11)?,
                 thread_id: row.get(12)?,
+                account_id: row.get(13)?,
             });
         }
 
@@ -301,7 +391,7 @@ impl EmailDatabase {
             .conn
             .query(
                 "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
-                        subject, body, preview, date, status, is_flagged, folder, thread_id
+                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id
                  FROM emails
                  WHERE id = ?1",
                 libsql::params![id],
@@ -324,6 +414,7 @@ impl EmailDatabase {
                 is_flagged: row.get::<i64>(10)? != 0,
                 folder: row.get(11)?,
                 thread_id: row.get(12)?,
+                account_id: row.get(13)?,
             }))
         } else {
             Ok(None)
@@ -406,11 +497,12 @@ impl EmailDatabase {
             // Insert new draft
             self.conn
                 .execute(
-                    "INSERT INTO drafts (recipients, subject, body) VALUES (?1, ?2, ?3)",
+                    "INSERT INTO drafts (recipients, subject, body, account_id) VALUES (?1, ?2, ?3, ?4)",
                     libsql::params![
                         draft.recipients.as_str(),
                         draft.subject.as_str(),
-                        draft.body.as_str()
+                        draft.body.as_str(),
+                        draft.account_id,
                     ],
                 )
                 .await
@@ -420,8 +512,8 @@ impl EmailDatabase {
             // Update existing draft
             self.conn
                 .execute(
-                    "UPDATE drafts SET recipients = ?1, subject = ?2, body = ?3, updated_at = CURRENT_TIMESTAMP WHERE id = ?4",
-                    libsql::params![draft.recipients.as_str(), draft.subject.as_str(), draft.body.as_str(), draft.id],
+                    "UPDATE drafts SET recipients = ?1, subject = ?2, body = ?3, account_id = ?4, updated_at = CURRENT_TIMESTAMP WHERE id = ?5",
+                    libsql::params![draft.recipients.as_str(), draft.subject.as_str(), draft.body.as_str(), draft.account_id, draft.id],
                 )
                 .await
                 .context("Failed to update draft")?;
@@ -434,7 +526,7 @@ impl EmailDatabase {
         let mut rows = self
             .conn
             .query(
-                "SELECT id, recipients, subject, body, created_at, updated_at
+                "SELECT id, recipients, subject, body, created_at, updated_at, account_id
                  FROM drafts
                  ORDER BY updated_at DESC",
                 (),
@@ -451,6 +543,7 @@ impl EmailDatabase {
                 body: row.get(3)?,
                 created_at: row.get(4)?,
                 updated_at: row.get(5)?,
+                account_id: row.get(6)?,
             });
         }
 
@@ -497,7 +590,7 @@ impl EmailDatabase {
             .conn
             .query(
                 "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
-                        subject, body, preview, date, status, is_flagged, folder, thread_id
+                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id
                  FROM emails
                  WHERE (subject LIKE ?1 OR body LIKE ?1 OR from_address LIKE ?1)
                    AND status != 'deleted'
@@ -523,10 +616,170 @@ impl EmailDatabase {
                 is_flagged: row.get::<i64>(10)? != 0,
                 folder: row.get(11)?,
                 thread_id: row.get(12)?,
+                account_id: row.get(13)?,
             });
         }
 
         Ok(emails)
+    }
+
+    /// Get all emails from a specific folder and account
+    pub async fn get_emails_by_folder_and_account(&self, folder: &str, account_id: Option<i64>) -> Result<Vec<DbEmail>> {
+        let query = if account_id.is_some() {
+            "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
+                    subject, body, preview, date, status, is_flagged, folder, thread_id, account_id
+             FROM emails
+             WHERE folder = ?1 AND account_id = ?2 AND status != 'deleted'
+             ORDER BY date DESC"
+        } else {
+            "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
+                    subject, body, preview, date, status, is_flagged, folder, thread_id, account_id
+             FROM emails
+             WHERE folder = ?1 AND account_id IS NULL AND status != 'deleted'
+             ORDER BY date DESC"
+        };
+
+        let mut rows = if let Some(acc_id) = account_id {
+            self.conn
+                .query(query, libsql::params![folder, acc_id])
+                .await
+                .context("Failed to query emails by folder and account")?
+        } else {
+            self.conn
+                .query(query, libsql::params![folder])
+                .await
+                .context("Failed to query emails by folder")?
+        };
+
+        let mut emails = Vec::new();
+        while let Some(row) = rows.next().await? {
+            emails.push(DbEmail {
+                id: row.get(0)?,
+                from_address: row.get(1)?,
+                to_addresses: row.get(2)?,
+                cc_addresses: row.get(3)?,
+                bcc_addresses: row.get(4)?,
+                subject: row.get(5)?,
+                body: row.get(6)?,
+                preview: row.get(7)?,
+                date: row.get(8)?,
+                status: EmailStatus::from_str(&row.get::<String>(9)?),
+                is_flagged: row.get::<i64>(10)? != 0,
+                folder: row.get(11)?,
+                thread_id: row.get(12)?,
+                account_id: row.get(13)?,
+            });
+        }
+
+        Ok(emails)
+    }
+
+    /// Insert or update an account
+    pub async fn save_account(&self, account: &DbAccount) -> Result<i64> {
+        if account.id == 0 {
+            // Insert new account
+            self.conn
+                .execute(
+                    "INSERT INTO accounts (name, email, provider, is_default, color, display_order)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    libsql::params![
+                        account.name.as_str(),
+                        account.email.as_str(),
+                        account.provider.as_str(),
+                        account.is_default as i64,
+                        account.color.as_deref(),
+                        account.display_order,
+                    ],
+                )
+                .await
+                .context("Failed to insert account")?;
+            Ok(self.conn.last_insert_rowid())
+        } else {
+            // Update existing account
+            self.conn
+                .execute(
+                    "UPDATE accounts SET name = ?1, email = ?2, provider = ?3, is_default = ?4, 
+                     color = ?5, display_order = ?6, updated_at = CURRENT_TIMESTAMP WHERE id = ?7",
+                    libsql::params![
+                        account.name.as_str(),
+                        account.email.as_str(),
+                        account.provider.as_str(),
+                        account.is_default as i64,
+                        account.color.as_deref(),
+                        account.display_order,
+                        account.id,
+                    ],
+                )
+                .await
+                .context("Failed to update account")?;
+            Ok(account.id)
+        }
+    }
+
+    /// Get all accounts
+    pub async fn get_accounts(&self) -> Result<Vec<DbAccount>> {
+        let mut rows = self
+            .conn
+            .query(
+                "SELECT id, name, email, provider, is_default, color, display_order
+                 FROM accounts
+                 ORDER BY display_order",
+                (),
+            )
+            .await
+            .context("Failed to query accounts")?;
+
+        let mut accounts = Vec::new();
+        while let Some(row) = rows.next().await? {
+            accounts.push(DbAccount {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                email: row.get(2)?,
+                provider: row.get(3)?,
+                is_default: row.get::<i64>(4)? != 0,
+                color: row.get(5)?,
+                display_order: row.get(6)?,
+            });
+        }
+
+        Ok(accounts)
+    }
+
+    /// Get account by ID
+    pub async fn get_account_by_id(&self, id: i64) -> Result<Option<DbAccount>> {
+        let mut rows = self
+            .conn
+            .query(
+                "SELECT id, name, email, provider, is_default, color, display_order
+                 FROM accounts
+                 WHERE id = ?1",
+                libsql::params![id],
+            )
+            .await
+            .context("Failed to query account")?;
+
+        if let Some(row) = rows.next().await? {
+            Ok(Some(DbAccount {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                email: row.get(2)?,
+                provider: row.get(3)?,
+                is_default: row.get::<i64>(4)? != 0,
+                color: row.get(5)?,
+                display_order: row.get(6)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Delete an account
+    pub async fn delete_account(&self, id: i64) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM accounts WHERE id = ?1", libsql::params![id])
+            .await
+            .context("Failed to delete account")?;
+        Ok(())
     }
 
     /// Clear all emails from the inbox folder (for development/testing)
@@ -585,6 +838,7 @@ mod tests {
             is_flagged: false,
             folder: "inbox".to_string(),
             thread_id: None,
+            account_id: None,
         };
 
         let id = db.insert_email(&email).await.unwrap();
@@ -615,6 +869,7 @@ mod tests {
             is_flagged: false,
             folder: "inbox".to_string(),
             thread_id: None,
+            account_id: None,
         };
 
         let email2 = DbEmail {
@@ -631,6 +886,7 @@ mod tests {
             is_flagged: false,
             folder: "sent".to_string(),
             thread_id: None,
+            account_id: None,
         };
 
         db.insert_email(&email1).await.unwrap();
@@ -663,6 +919,7 @@ mod tests {
             is_flagged: false,
             folder: "inbox".to_string(),
             thread_id: None,
+            account_id: None,
         };
 
         let id = db.insert_email(&email).await.unwrap();
@@ -690,6 +947,7 @@ mod tests {
             is_flagged: false,
             folder: "inbox".to_string(),
             thread_id: None,
+            account_id: None,
         };
 
         let id = db.insert_email(&email).await.unwrap();
@@ -739,6 +997,7 @@ mod tests {
             is_flagged: false,
             folder: "inbox".to_string(),
             thread_id: None,
+            account_id: None,
         };
 
         let email2 = DbEmail {
@@ -755,6 +1014,7 @@ mod tests {
             is_flagged: false,
             folder: "inbox".to_string(),
             thread_id: None,
+            account_id: None,
         };
 
         db.insert_email(&email1).await.unwrap();
@@ -790,6 +1050,7 @@ mod tests {
             is_flagged: false,
             folder: "inbox".to_string(),
             thread_id: None,
+            account_id: None,
         };
 
         db.insert_email(&email).await.unwrap();
