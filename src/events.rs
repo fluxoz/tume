@@ -48,6 +48,19 @@ fn handle_inbox_keys(app: &mut App, key: KeyEvent) {
             app.enter_visual_mode();
         }
 
+        // Account switching (1-9)
+        KeyCode::Char(c @ '1'..='9') => {
+            let index = (c as u8 - b'1') as usize;
+            app.switch_to_account(index);
+        }
+
+        // Next/Previous account
+        KeyCode::Char(']') => app.next_account(),
+        KeyCode::Char('[') => app.prev_account(),
+
+        // Tab to cycle through accounts
+        KeyCode::Tab => app.next_account(),
+
         // Actions
         KeyCode::Char('d') => app.perform_action(Action::Delete),
         KeyCode::Char('a') => app.perform_action(Action::Archive),
