@@ -216,7 +216,7 @@ impl EmailDatabase {
         if !column_exists {
             self.conn
                 .execute(
-                    "ALTER TABLE emails ADD COLUMN account_id INTEGER REFERENCES accounts(id)",
+                    "ALTER TABLE emails ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL",
                     (),
                 )
                 .await
@@ -228,7 +228,7 @@ impl EmailDatabase {
         if !draft_column_exists {
             self.conn
                 .execute(
-                    "ALTER TABLE drafts ADD COLUMN account_id INTEGER REFERENCES accounts(id)",
+                    "ALTER TABLE drafts ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL",
                     (),
                 )
                 .await
@@ -276,6 +276,12 @@ impl EmailDatabase {
 
     /// Check if a column exists in a table
     async fn check_column_exists(&self, table: &str, column: &str) -> Result<bool> {
+        // Whitelist of allowed table names to prevent SQL injection
+        let allowed_tables = ["emails", "drafts", "accounts", "folders", "attachments"];
+        if !allowed_tables.contains(&table) {
+            anyhow::bail!("Invalid table name: {}", table);
+        }
+
         let mut rows = self
             .conn
             .query(
