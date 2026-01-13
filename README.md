@@ -6,6 +6,8 @@ A Terminal User Interface (TUI) email client built with Rust, featuring vim-styl
 
 ### Current Implementation
 
+- **Multi-Account Support**: Manage multiple email accounts with easy switching (1-9, Tab, [/])
+- **Configuration**: TOML-based configuration at `~/.config/tume/config.toml`
 - **Inbox View**: Browse a list of emails with sender, subject, date, and preview
 - **Email Detail View**: Read full email content
 - **Compose View**: Full-featured email composition with modal editing
@@ -30,6 +32,64 @@ cargo build --release
 ```bash
 cargo run
 ```
+
+## Configuration
+
+TUME supports multi-account management through a TOML configuration file located at `~/.config/tume/config.toml`.
+
+### Example Configuration
+
+```toml
+# TUME Email Client Configuration
+
+# Accounts configuration
+[accounts.work]
+name = "Work Gmail"
+email = "work@company.com"
+provider = "gmail"
+default = true
+color = "blue"
+display_order = 1
+
+[accounts.personal]
+name = "Personal"
+email = "me@gmail.com"
+provider = "gmail"
+color = "green"
+display_order = 2
+
+# Keybindings configuration
+[keybindings]
+switch_account = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+next_account = "]"
+prev_account = "["
+mailbox_picker = "M"
+add_account = "A"
+```
+
+### Configuration Options
+
+#### Account Settings
+
+- `name`: Display name for the account
+- `email`: Email address
+- `provider`: Provider type (e.g., "gmail", "outlook", "imap")
+- `default`: Set to `true` for the default account (optional)
+- `color`: Color for account indicators (optional)
+- `display_order`: Order in which accounts appear (lower numbers first)
+
+#### Keybindings
+
+All keybindings are customizable. The default keybindings shown above can be modified to suit your preferences.
+
+### Multi-Account Support
+
+TUME supports managing multiple email accounts simultaneously:
+
+- **Account Switching**: Press `1-9` to switch to accounts 1-9, or use `[` and `]` to cycle through accounts
+- **Visual Indicator**: Current account name is shown in the header
+- **Per-Account Emails**: Emails are filtered by the currently selected account
+- **Unified Inbox**: All accounts can be viewed together (upcoming feature)
 
 ## Usage
 
@@ -62,6 +122,10 @@ The inbox displays a list of emails with the following information:
 | `Enter` or `l` | Open selected email |
 | `V` (Shift+V) | Enter visual line mode for batch operations |
 | `p` | Toggle preview panel |
+| `1-9` | Switch to account 1-9 |
+| `[` | Switch to previous account |
+| `]` | Switch to next account |
+| `Tab` | Cycle to next account |
 | `d` | Delete email |
 | `a` | Archive email |
 | `r` | Reply to email (placeholder) |
@@ -236,6 +300,8 @@ The application is structured into several modules:
 
 - **`main.rs`**: Entry point, terminal setup, and main event loop
 - **`app.rs`**: Application state management and business logic
+- **`config.rs`**: Configuration loading and management
+- **`db.rs`**: Database operations and schema
 - **`ui.rs`**: UI rendering using Ratatui
 - **`events.rs`**: Keyboard event handling and input processing
 
@@ -244,6 +310,8 @@ The application is structured into several modules:
 - **ratatui**: Terminal UI library for creating rich text user interfaces
 - **crossterm**: Cross-platform terminal manipulation
 - **anyhow**: Error handling
+- **serde**: Serialization/deserialization for configuration
+- **toml**: TOML configuration file parsing
 - **tui-markdown**: Markdown parsing and terminal rendering
 - **ratatui-core**: Core types for markdown rendering
 - **libsql**: Turso/libSQL for local database storage
@@ -263,6 +331,8 @@ The application is structured into several modules:
 - ✅ Single delete and archive operations
 - ✅ Draft management (auto-save, restore, explicit save with 'w')
 - ✅ Local database storage for emails and drafts
+- ✅ Multi-account support with configuration
+- ✅ Account switching (1-9, [, ], Tab)
 - ✅ GPG and Yubikey hooks (stubs for future encryption/signing)
 
 ### Placeholder Features
@@ -271,13 +341,14 @@ The application is structured into several modules:
 - Actual sending of composed emails
 
 ### Future Development
+- Account picker UI (M key)
+- Account onboarding wizard (A key)
+- Unified inbox view across all accounts
 - Actual email protocol integration (IMAP/SMTP)
 - Send composed emails via SMTP
 - Reply and forward with pre-filled fields
 - GPG encryption implementation
 - Yubikey signing implementation
-- Configuration system
-- Multiple account support
 - Email threading
 - Search functionality
 - Filtering and sorting

@@ -12,3 +12,5 @@ ratatui-core = "0.1"
 libsql = "0.6"
 tokio = { version = "1.42", features = ["full"] }
 dirs = "5.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
