@@ -826,13 +826,18 @@ mod tests {
     #[test]
     fn test_actions() {
         let mut app = App::new();
+        let initial_count = app.emails.len();
 
         app.perform_action(Action::Delete);
         assert!(app.status_message.is_some());
         assert!(app.status_message.as_ref().unwrap().contains("Deleted"));
+        // Delete should remove the email from the list
+        assert_eq!(app.emails.len(), initial_count - 1);
 
         app.perform_action(Action::Archive);
         assert!(app.status_message.as_ref().unwrap().contains("Archived"));
+        // Archive should also remove the email from the list
+        assert_eq!(app.emails.len(), initial_count - 2);
 
         app.perform_action(Action::Reply);
         assert!(app.status_message.as_ref().unwrap().contains("Replying"));
@@ -1275,6 +1280,75 @@ mod tests {
         assert!(app.status_message.is_some());
         assert!(app.status_message.as_ref().unwrap().contains("Archived"));
         assert!(app.status_message.as_ref().unwrap().contains("2"));
+    }
+
+    #[test]
+    fn test_single_delete_action() {
+        let mut app = App::new();
+        let initial_count = app.emails.len();
+        
+        // Select the first email
+        assert_eq!(app.selected_index, 0);
+        let first_email_subject = app.emails[0].subject.clone();
+        
+        // Perform single delete
+        app.perform_action(Action::Delete);
+        
+        // Verify email was removed
+        assert_eq!(app.emails.len(), initial_count - 1);
+        
+        // Verify the correct email was removed
+        assert_ne!(app.emails[0].subject, first_email_subject);
+        
+        // Verify selected_index is still valid
+        assert_eq!(app.selected_index, 0);
+        
+        // Verify status message
+        assert!(app.status_message.is_some());
+        assert!(app.status_message.as_ref().unwrap().contains("Deleted"));
+        assert!(app.status_message.as_ref().unwrap().contains(&first_email_subject));
+    }
+
+    #[test]
+    fn test_single_delete_last_email() {
+        let mut app = App::new();
+        let initial_count = app.emails.len();
+        
+        // Move to the last email
+        app.selected_index = initial_count - 1;
+        
+        // Perform delete
+        app.perform_action(Action::Delete);
+        
+        // Verify email was removed
+        assert_eq!(app.emails.len(), initial_count - 1);
+        
+        // Verify selected_index was adjusted
+        assert_eq!(app.selected_index, initial_count - 2);
+    }
+
+    #[test]
+    fn test_single_archive_action() {
+        let mut app = App::new();
+        let initial_count = app.emails.len();
+        
+        // Select the second email
+        app.selected_index = 1;
+        let email_subject = app.emails[1].subject.clone();
+        
+        // Perform single archive
+        app.perform_action(Action::Archive);
+        
+        // Verify email was removed from inbox
+        assert_eq!(app.emails.len(), initial_count - 1);
+        
+        // Verify selected_index is still valid
+        assert_eq!(app.selected_index, 1);
+        
+        // Verify status message
+        assert!(app.status_message.is_some());
+        assert!(app.status_message.as_ref().unwrap().contains("Archived"));
+        assert!(app.status_message.as_ref().unwrap().contains(&email_subject));
     }
 
     #[test]
