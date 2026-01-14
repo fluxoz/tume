@@ -7,11 +7,13 @@ use ratatui::{
 };
 use tui_markdown::from_str;
 
-use crate::app::{App, ComposeField, ComposeMode, View, CredentialField, CredentialsMode};
+use crate::app::{App, ComposeField, ComposeMode, View, CredentialField};
 use crate::credentials::StorageBackend;
 
 // Layout constants
 const MIN_WIDTH_FOR_VERTICAL_SPLIT: u16 = 120;
+const MASTER_PASSWORD_LABEL: &str = "Master Password: ";
+const MASTER_PASSWORD_LABEL_LEN: u16 = 17; // Length of "Master Password: "
 
 // Helper function to convert ratatui_core::Color to ratatui::Color
 fn convert_color(core_color: ratatui_core::style::Color) -> Color {
@@ -859,15 +861,15 @@ fn render_credentials_unlock(f: &mut Frame, area: Rect, app: &App) {
         .style(Style::default().fg(Color::White));
     f.render_widget(instructions_para, chunks[0]);
 
-    // Password field
+    // Password field - render label and input on the same line like compose view
     let password_display = "*".repeat(unlock.master_password.len());
-    let password_field = Paragraph::new(vec![
-        Line::from(Span::styled("Master Password:", Style::default().add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled(
+    let password_field = Paragraph::new(Line::from(vec![
+        Span::styled(MASTER_PASSWORD_LABEL, Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(
             password_display,
             Style::default().fg(Color::Green),
-        )),
-    ])
+        ),
+    ]))
     .block(Block::default().borders(Borders::ALL));
     f.render_widget(password_field, chunks[2]);
 
@@ -890,11 +892,11 @@ fn render_credentials_unlock(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(message_para, chunks[4]);
 
     // Set cursor position in password field
-    let password_field_inner = Block::default().borders(Borders::ALL).inner(chunks[2]);
-    let cursor_x = password_field_inner.x.saturating_add(unlock.cursor_position.min(u16::MAX as usize) as u16);
+    let cursor_x = chunks[2].x + 1 + MASTER_PASSWORD_LABEL_LEN + unlock.cursor_position.min(u16::MAX as usize) as u16; // border + label + cursor position
+    let cursor_y = chunks[2].y + 1; // border
     f.set_cursor_position((
-        cursor_x.min(password_field_inner.right().saturating_sub(1)),
-        password_field_inner.y + 1,
+        cursor_x.min(chunks[2].right().saturating_sub(2)),
+        cursor_y,
     ));
 }
 
