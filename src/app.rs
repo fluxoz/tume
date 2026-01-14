@@ -85,6 +85,13 @@ pub enum CredentialField {
     MasterPasswordConfirm,
 }
 
+/// Editing mode for credentials setup (similar to compose)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CredentialsMode {
+    Normal,
+    Insert,
+}
+
 /// State for credentials setup view
 #[derive(Debug, Clone)]
 pub struct CredentialsSetupState {
@@ -104,6 +111,7 @@ pub struct CredentialsSetupState {
     pub selected_provider: Option<String>, // Provider ID if one was selected
     pub provider_selection_mode: bool, // Whether we're in provider selection mode
     pub provider_list_index: usize, // Selected index in provider list
+    pub mode: CredentialsMode, // Normal or Insert mode
 }
 
 impl CredentialsSetupState {
@@ -125,6 +133,7 @@ impl CredentialsSetupState {
             selected_provider: None,
             provider_selection_mode: true, // Start in provider selection mode
             provider_list_index: 0,
+            mode: CredentialsMode::Normal, // Start in normal mode
         }
     }
 
@@ -139,11 +148,11 @@ impl CredentialsSetupState {
     }
 
     /// Check if user can navigate back to provider selection
-    /// Only allowed when on the first field and cursor is at position 0
+    /// Only allowed in Normal mode, on the first field
     pub fn can_navigate_back_to_providers(&self) -> bool {
         !self.provider_selection_mode 
-            && self.current_field == CredentialField::ImapServer 
-            && self.cursor_position == 0
+            && self.mode == CredentialsMode::Normal
+            && self.current_field == CredentialField::ImapServer
     }
 }
 
@@ -1021,6 +1030,22 @@ impl App {
                 setup.provider_selection_mode = true;
                 setup.selected_provider = None;
             }
+        }
+    }
+
+    /// Enter insert mode for editing credentials fields
+    pub fn credentials_setup_enter_insert_mode(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            if !setup.provider_selection_mode {
+                setup.mode = CredentialsMode::Insert;
+            }
+        }
+    }
+
+    /// Exit insert mode and return to normal mode
+    pub fn credentials_setup_exit_insert_mode(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            setup.mode = CredentialsMode::Normal;
         }
     }
 
