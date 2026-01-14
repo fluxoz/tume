@@ -30,6 +30,66 @@ color = "yellow"
 display_order = 3
 
 # ==============================================================================
+# UI / THEMING CONFIGURATION
+# ==============================================================================
+# Customize the appearance of TUME with Neovim-inspired themes
+[ui]
+# Choose a theme: gruvbox-dark, dracula, nord, solarized-dark, tokyo-night
+theme = "gruvbox-dark"
+
+# Advanced: Define a custom theme (optional)
+# Uncomment and customize to override the selected theme
+# [ui.custom_theme]
+# name = "My Custom Theme"
+# 
+# # Base colors
+# background = { Rgb = [40, 40, 40] }
+# foreground = { Rgb = [235, 219, 178] }
+# 
+# # UI Elements
+# border = { Rgb = [146, 131, 116] }
+# border_focused = { Rgb = [254, 128, 25] }
+# title = { Rgb = [142, 192, 124] }
+# status_bar = { Rgb = [60, 56, 54] }
+# status_bar_mode = { Rgb = [251, 241, 199] }
+# 
+# # Text styles
+# text_normal = { Rgb = [235, 219, 178] }
+# text_dim = { Rgb = [146, 131, 116] }
+# text_bold = { Rgb = [251, 241, 199] }
+# text_highlight = { Rgb = [250, 189, 47] }
+# 
+# # Interactive elements
+# cursor = { Rgb = [80, 73, 69] }
+# selection = { Rgb = [69, 133, 136] }
+# visual_selection = { Rgb = [102, 92, 84] }
+# active_field = { Rgb = [142, 192, 124] }
+# insert_mode = { Rgb = [250, 189, 47] }
+# 
+# # Status indicators
+# success = { Rgb = [184, 187, 38] }
+# warning = { Rgb = [250, 189, 47] }
+# error = { Rgb = [251, 73, 52] }
+# info = { Rgb = [131, 165, 152] }
+# 
+# # Email list
+# email_from = { Rgb = [142, 192, 124] }
+# email_subject = { Rgb = [235, 219, 178] }
+# email_date = { Rgb = [146, 131, 116] }
+# email_unread = { Rgb = [251, 241, 199] }
+# 
+# # Compose view
+# compose_field_label = { Rgb = [142, 192, 124] }
+# compose_field_value = { Rgb = [235, 219, 178] }
+# compose_field_empty = { Rgb = [146, 131, 116] }
+# 
+# # Markdown preview
+# markdown_heading = { Rgb = [250, 189, 47] }
+# markdown_emphasis = { Rgb = [254, 128, 25] }
+# markdown_link = { Rgb = [131, 165, 152] }
+# markdown_code = { Rgb = [184, 187, 38] }
+
+# ==============================================================================
 # KEYBINDINGS CONFIGURATION
 # ==============================================================================
 # Customize your keybindings here. All settings are optional and will fall back
@@ -50,6 +110,36 @@ mailbox_picker = "M"
 add_account = "A"
 
 # ==============================================================================
+# THEME GALLERY
+# ==============================================================================
+# Available built-in themes (set ui.theme to one of these):
+#
+# 1. gruvbox-dark (default)
+#    - Retro groove color scheme with warm palette
+#    - Excellent contrast and readability
+#    - Inspired by the popular Gruvbox Vim theme
+#
+# 2. dracula
+#    - Dark theme with vibrant purple and pink accents
+#    - Modern and elegant appearance
+#    - Popular across many development tools
+#
+# 3. nord
+#    - Arctic, north-bluish color palette
+#    - Frost-colored and calm appearance
+#    - Excellent for long coding/reading sessions
+#
+# 4. solarized-dark
+#    - Precision colors for machines and people
+#    - Scientifically designed for readability
+#    - Classic theme with loyal following
+#
+# 5. tokyo-night
+#    - Dark theme inspired by Tokyo's night
+#    - Clean with vibrant blue and purple accents
+#    - Modern and stylish appearance
+
+# ==============================================================================
 # NOTES
 # ==============================================================================
 # - Account switching: Press 1-9 to jump directly to an account, or use [ and ]
@@ -57,3 +147,6 @@ add_account = "A"
 # - The current account is displayed in the header: TUME - [Account Name]
 # - Emails are filtered by the currently selected account
 # - All accounts are synced from this config to the database on startup
+# - Theme changes take effect on next application start
+# - The status bar shows: [MODE] <status message> <email count> <theme name>
+
