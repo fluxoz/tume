@@ -67,7 +67,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         ])
         .split(f.area());
 
-    render_header(f, chunks[0]);
+    render_header(f, chunks[0], app);
 
     match app.current_view {
         View::InboxList => render_inbox(f, chunks[1], app),
@@ -81,8 +81,15 @@ pub fn draw(f: &mut Frame, app: &App) {
     render_footer(f, chunks[2], app);
 }
 
-fn render_header(f: &mut Frame, area: Rect) {
-    let header = Paragraph::new("TUME - Terminal Email Client")
+fn render_header(f: &mut Frame, area: Rect, app: &App) {
+    // Build header text with account info if available
+    let header_text = if let Some(account_name) = app.get_current_account_name() {
+        format!("TUME - Terminal Email Client [{}]", account_name)
+    } else {
+        "TUME - Terminal Email Client".to_string()
+    };
+
+    let header = Paragraph::new(header_text)
         .style(
             Style::default()
                 .fg(Color::Cyan)
