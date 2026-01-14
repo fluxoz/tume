@@ -7,7 +7,7 @@ use ratatui::{
 };
 use tui_markdown::from_str;
 
-use crate::app::{App, ComposeField, ComposeMode, View, CredentialField, CredentialsMode};
+use crate::app::{App, ComposeField, ComposeMode, View, CredentialField};
 use crate::credentials::StorageBackend;
 
 // Layout constants
