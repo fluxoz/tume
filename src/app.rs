@@ -4,6 +4,7 @@ use crate::db::{DbAccount, DbDraft, DbEmail, EmailDatabase, EmailStatus as DbEma
 use crate::theme::Theme;
 use std::collections::HashSet;
 use std::fmt;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 pub struct Email {
@@ -197,6 +198,7 @@ pub struct App {
     pub current_account_id: Option<i64>,
     pub email_sync_manager: Option<crate::email_sync::EmailSyncManager>,
     pub theme: Theme,
+    pub last_sync_result: Arc<Mutex<Option<String>>>,
 }
 
 impl App {
@@ -223,6 +225,7 @@ impl App {
             current_account_id: None,
             email_sync_manager: None,
             theme: Theme::default(),
+            last_sync_result: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -408,6 +411,7 @@ impl App {
             accounts,
             current_account_id,
             email_sync_manager: Some(crate::email_sync::EmailSyncManager::new(credentials)),
+            last_sync_result: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -1035,55 +1039,77 @@ impl App {
     /// Attempt to sync emails from IMAP server
     pub fn attempt_email_sync(&mut self) {
         if let Some(ref sync_manager) = self.email_sync_manager {
-            if sync_manager.is_configured() {
-                // Trigger async sync in background
-                if let Some(ref sync_manager) = self.email_sync_manager {
-                    if let Some(ref db) = self.db {
-                        let sync_manager_clone = sync_manager.clone();
-                        let db_clone = db.clone();
-                        let account_id = self.current_account_id;
-                        
-                        // Spawn background task to fetch and store emails
-                        tokio::spawn(async move {
-                            match sync_manager_clone.imap_client() {
-                                Some(client) => {
-                                    match client.fetch_emails("INBOX", Some(50)).await {
-                                        Ok(emails) => {
-                                            // Store emails in database
-                                            for mut email in emails {
-                                                email.account_id = account_id;
-                                                if let Err(e) = db_clone.insert_email(&email).await {
-                                                    eprintln!("Failed to store email: {}", e);
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            eprintln!("Email sync failed: {}", e);
+            if !sync_manager.is_configured() {
+                self.status_message = Some(
+                    "No credentials configured. Please set up email credentials first.".to_string()
+                );
+                return;
+            }
+            
+            if let (Some(db), Some(sync_manager)) = (&self.db, &self.email_sync_manager) {
+                let sync_manager_clone = sync_manager.clone();
+                let db_clone = db.clone();
+                let account_id = self.current_account_id;
+                let sync_result = Arc::clone(&self.last_sync_result);
+                
+                self.status_message = Some("Email sync started. Connecting to server...".to_string());
+                
+                // Spawn background task to fetch and store emails
+                tokio::spawn(async move {
+                    match sync_manager_clone.imap_client() {
+                        Some(client) => {
+                            match client.fetch_emails("INBOX", Some(50)).await {
+                                Ok(emails) => {
+                                    let count = emails.len();
+                                    let mut stored = 0;
+                                    // Store emails in database
+                                    for mut email in emails {
+                                        email.account_id = account_id;
+                                        if db_clone.insert_email(&email).await.is_ok() {
+                                            stored += 1;
                                         }
                                     }
+                                    let msg = format!("✓ Sync successful: {} emails fetched, {} stored", count, stored);
+                                    eprintln!("{}", msg);
+                                    if let Ok(mut result) = sync_result.lock() {
+                                        *result = Some(msg);
+                                    }
                                 }
-                                None => {
-                                    eprintln!("No IMAP client available");
+                                Err(e) => {
+                                    let msg = format!("✗ Sync failed: {}", e);
+                                    eprintln!("{}", msg);
+                                    if let Ok(mut result) = sync_result.lock() {
+                                        *result = Some(msg);
+                                    }
                                 }
                             }
-                        });
-                        
-                        self.status_message = Some("Email sync started. Fetching from server...".to_string());
-                        
-                        // Reload emails from database after a short delay
-                        self.reload_emails_for_current_account();
+                        }
+                        None => {
+                            let msg = "✗ No IMAP client - credentials not loaded".to_string();
+                            eprintln!("{}", msg);
+                            if let Ok(mut result) = sync_result.lock() {
+                                *result = Some(msg);
+                            }
+                        }
                     }
-                }
-            } else {
-                self.status_message = Some(
-
-                    format!("No credentials configured. Please set up email credentials first. Sync manager: {:?}", sync_manager)
-                );
+                });
+                
+                // Reload emails from database
+                self.reload_emails_for_current_account();
             }
         } else {
             self.status_message = Some(
                 "Email sync not available. Please restart the app after configuring credentials.".to_string()
             );
+        }
+    }
+    
+    /// Check and display last sync result
+    pub fn check_sync_result(&mut self) {
+        if let Ok(mut result) = self.last_sync_result.lock() {
+            if let Some(msg) = result.take() {
+                self.status_message = Some(msg);
+            }
         }
     }
 
@@ -2056,6 +2082,7 @@ mod tests {
             accounts: Vec::new(),
             current_account_id: None,
             email_sync_manager: None,
+            last_sync_result: Arc::new(Mutex::new(None)),
             theme: Theme::default(),
         };
 
@@ -2132,6 +2159,7 @@ mod tests {
             accounts: Vec::new(),
             current_account_id: None,
             email_sync_manager: None,
+            last_sync_result: Arc::new(Mutex::new(None)),
             theme: Theme::default(),
         };
 
