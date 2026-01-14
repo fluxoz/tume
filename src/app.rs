@@ -1076,7 +1076,8 @@ impl App {
                 }
             } else {
                 self.status_message = Some(
-                    "No credentials configured. Please set up email credentials first.".to_string()
+
+                    format!("No credentials configured. Please set up email credentials first. Sync manager: {:?}", sync_manager)
                 );
             }
         } else {
