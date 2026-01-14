@@ -81,7 +81,7 @@ pub enum SyncStatus {
 }
 
 /// IMAP email fetcher
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ImapClient {
     credentials: Credentials,
 }
@@ -284,7 +284,7 @@ impl ImapClient {
 }
 
 /// SMTP email sender (stub implementation)
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SmtpClient {
     credentials: Credentials,
 }
@@ -327,7 +327,7 @@ impl SmtpClient {
 }
 
 /// Email sync manager that coordinates IMAP/SMTP operations and inbox rules
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EmailSyncManager {
     imap_client: Option<ImapClient>,
     smtp_client: Option<SmtpClient>,
