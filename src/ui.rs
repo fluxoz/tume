@@ -591,7 +591,7 @@ fn render_provider_selection(f: &mut Frame, area: Rect, app: &App) {
     let backend = app.credentials_manager
         .as_ref()
         .map(|m| m.backend())
-        .unwrap_or(StorageBackend::SystemKeyring);
+        .unwrap_or(StorageBackend::EncryptedFile);
 
     // Title
     let title = " Email Provider Setup ";
@@ -676,7 +676,7 @@ fn render_credentials_fields(f: &mut Frame, area: Rect, app: &App) {
     let backend = app.credentials_manager
         .as_ref()
         .map(|m| m.backend())
-        .unwrap_or(crate::credentials::StorageBackend::SystemKeyring);
+        .unwrap_or(crate::credentials::StorageBackend::EncryptedFile);
 
     // Get selected provider name for title
     let provider_name = setup.selected_provider
@@ -929,7 +929,7 @@ fn render_credentials_management(f: &mut Frame, area: Rect, app: &App) {
 
     // Backend info
     let (backend, description) = app.get_backend_info()
-        .unwrap_or((StorageBackend::SystemKeyring, "Unknown".to_string()));
+        .unwrap_or((StorageBackend::EncryptedFile, "Unknown".to_string()));
     
     let backend_info = vec![
         Line::from(vec![
