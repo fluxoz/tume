@@ -759,14 +759,24 @@ fn render_credentials_fields(f: &mut Frame, area: Rect, app: &App) {
     let fields_para = Paragraph::new(field_lines).wrap(Wrap { trim: false });
     f.render_widget(fields_para, chunks[1]);
 
-    // Render backend info and tips
-    let backend_info = vec![
-        Line::from(""),
-        Line::from(Span::styled("Tip:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
-        Line::from("  Press 'i' to enter Insert mode to edit fields"),
-        Line::from("  Press 'P' to toggle password visibility"),
-        Line::from("  Press 'h' in Normal mode on first field to go back to provider selection"),
-    ];
+    // Render mode-specific tips
+    let backend_info = if setup.mode == crate::app::CredentialsMode::Normal {
+        vec![
+            Line::from(""),
+            Line::from(Span::styled("Tip:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
+            Line::from("  Press 'i' to enter Insert mode to edit fields"),
+            Line::from("  Press 'P' to toggle password visibility"),
+            Line::from("  Press 'h' on first field to go back to provider selection"),
+        ]
+    } else {
+        vec![
+            Line::from(""),
+            Line::from(Span::styled("Tip:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
+            Line::from("  Press 'Esc' to return to Normal mode"),
+            Line::from("  Type freely - all characters including 'j' and 'k' work"),
+            Line::from("  Use Left/Right arrows to move cursor within field"),
+        ]
+    };
     let info_para = Paragraph::new(backend_info).wrap(Wrap { trim: false });
     f.render_widget(info_para, chunks[2]);
 }
