@@ -1571,10 +1571,13 @@ impl App {
         // Attempt to load credentials
         match manager.load_credentials(Some(&password)) {
             Ok(credentials) => {
-                self.credentials = Some(credentials);
+                self.credentials = Some(credentials.clone());
                 self.credentials_unlock_state = None;
                 self.current_view = View::InboxList;
                 self.status_message = Some("Credentials unlocked successfully".to_string());
+                
+                // Initialize email sync manager with unlocked credentials
+                self.email_sync_manager = Some(crate::email_sync::EmailSyncManager::new(Some(credentials)));
             }
             Err(e) => {
                 if let Some(ref mut unlock) = self.credentials_unlock_state {
