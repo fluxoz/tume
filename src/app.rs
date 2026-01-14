@@ -101,6 +101,9 @@ pub struct CredentialsSetupState {
     pub current_field: CredentialField,
     pub cursor_position: usize,
     pub show_passwords: bool,
+    pub selected_provider: Option<String>, // Provider ID if one was selected
+    pub provider_selection_mode: bool, // Whether we're in provider selection mode
+    pub provider_list_index: usize, // Selected index in provider list
 }
 
 impl CredentialsSetupState {
@@ -119,7 +122,20 @@ impl CredentialsSetupState {
             current_field: CredentialField::ImapServer,
             cursor_position: 0,
             show_passwords: false,
+            selected_provider: None,
+            provider_selection_mode: true, // Start in provider selection mode
+            provider_list_index: 0,
         }
+    }
+
+    /// Apply a provider preset to this setup state
+    pub fn apply_provider(&mut self, provider: &crate::providers::EmailProvider) {
+        self.selected_provider = Some(provider.id.to_string());
+        self.imap_server = provider.imap_server.to_string();
+        self.imap_port = provider.imap_port.to_string();
+        self.smtp_server = provider.smtp_server.to_string();
+        self.smtp_port = provider.smtp_port.to_string();
+        self.provider_selection_mode = false;
     }
 }
 
@@ -953,6 +969,52 @@ impl App {
     }
 
     // ============ Credentials Management Methods ============
+
+    /// Navigate to next provider in selection list
+    pub fn credentials_setup_next_provider(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            if setup.provider_selection_mode {
+                let providers = crate::providers::EmailProvider::all();
+                setup.provider_list_index = (setup.provider_list_index + 1) % providers.len();
+            }
+        }
+    }
+
+    /// Navigate to previous provider in selection list
+    pub fn credentials_setup_prev_provider(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            if setup.provider_selection_mode {
+                let providers = crate::providers::EmailProvider::all();
+                setup.provider_list_index = if setup.provider_list_index == 0 {
+                    providers.len() - 1
+                } else {
+                    setup.provider_list_index - 1
+                };
+            }
+        }
+    }
+
+    /// Select the currently highlighted provider and move to field entry
+    pub fn credentials_setup_select_provider(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            if setup.provider_selection_mode {
+                let providers = crate::providers::EmailProvider::all();
+                if let Some(provider) = providers.get(setup.provider_list_index) {
+                    setup.apply_provider(provider);
+                }
+            }
+        }
+    }
+
+    /// Go back to provider selection from field entry
+    pub fn credentials_setup_back_to_providers(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            if !setup.provider_selection_mode {
+                setup.provider_selection_mode = true;
+                setup.selected_provider = None;
+            }
+        }
+    }
 
     /// Navigate to next field in credentials setup
     pub fn credentials_setup_next_field(&mut self) {
