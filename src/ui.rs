@@ -291,7 +291,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
             if app.visual_mode {
                 "j/k: Extend selection | d: Delete selected | a: Archive selected | Esc: Exit visual mode"
             } else {
-                "j/k: Navigate | Enter/l: Read | V: Visual mode | p: Preview | d: Delete | a: Archive | c: Compose | m: Creds | q: Quit"
+                "j/k: Navigate | Enter/l: Read | V: Visual mode | p: Preview | s: Sync | d: Delete | a: Archive | c: Compose | m: Creds | q: Quit"
             }
         }
         View::EmailDetail => {

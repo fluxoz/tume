@@ -71,6 +71,9 @@ fn handle_inbox_keys(app: &mut App, key: KeyEvent) {
         KeyCode::Char('c') => app.perform_action(Action::Compose),
         KeyCode::Char('f') => app.perform_action(Action::Forward),
 
+        // Sync emails (stub)
+        KeyCode::Char('s') => app.attempt_email_sync(),
+
         // Credentials management
         KeyCode::Char('m') => app.enter_credentials_management(),
 
