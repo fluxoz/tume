@@ -232,9 +232,19 @@ impl App {
             eprintln!("Warning: Failed to load config: {}. Using defaults.", e);
             Config::default()
         });
+        
+        eprintln!("DEBUG: Config loaded. Accounts in config: {}", config.accounts.len());
+        for (key, account) in &config.accounts {
+            eprintln!("DEBUG: Config account '{}': {} ({})", key, account.name, account.email);
+        }
 
         // Load accounts from database
         let accounts = db.get_accounts().await?;
+        
+        eprintln!("DEBUG: Accounts from DB: {}", accounts.len());
+        for account in &accounts {
+            eprintln!("DEBUG: DB account: {} ({})", account.name, account.email);
+        }
 
         // Sync accounts from config to database if needed
         let accounts = Self::sync_accounts_from_config(&db, &config, accounts).await?;
@@ -307,6 +317,10 @@ impl App {
         
         // Check if we have a real mailbox configured (in config or database)
         let has_configured_mailbox = !config.accounts.is_empty() || !accounts.is_empty();
+        
+        eprintln!("DEBUG: has_configured_mailbox = {} (config.accounts={}, db.accounts={})", 
+            has_configured_mailbox, config.accounts.len(), accounts.len());
+        eprintln!("DEBUG: credentials_exist = {}", credentials_manager.credentials_exist());
         
         // Determine initial view based on credentials and mailbox configuration
         let (initial_view, credentials, credentials_setup_state, credentials_unlock_state) = 

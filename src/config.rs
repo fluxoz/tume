@@ -90,7 +90,11 @@ impl Config {
     pub fn load() -> Result<Self> {
         let config_path = Self::config_path()?;
         
+        eprintln!("DEBUG: Loading config from {:?}", config_path);
+        eprintln!("DEBUG: Config file exists: {}", config_path.exists());
+        
         if !config_path.exists() {
+            eprintln!("DEBUG: Config file doesn't exist, generating skeleton");
             // Generate skeleton config file for user reference
             Self::generate_skeleton_config(&config_path)?;
             // Return default config
@@ -100,8 +104,12 @@ impl Config {
         let contents = fs::read_to_string(&config_path)
             .context("Failed to read config file")?;
         
+        eprintln!("DEBUG: Config file contents ({} bytes):\n{}", contents.len(), contents);
+        
         let config: Config = toml::from_str(&contents)
             .context("Failed to parse config file")?;
+        
+        eprintln!("DEBUG: Parsed config with {} accounts", config.accounts.len());
         
         Ok(config)
     }
