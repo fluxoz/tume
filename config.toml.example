@@ -1,0 +1,59 @@
+# TUME Email Client Configuration
+# Place this file at: ~/.config/tume/config.toml
+
+# ==============================================================================
+# ACCOUNTS CONFIGURATION
+# ==============================================================================
+# Define your email accounts here. Each account should have a unique key
+# (e.g., "work", "personal", "side-project").
+
+[accounts.work]
+name = "Work Gmail"
+email = "work@company.com"
+provider = "gmail"
+default = true              # Set one account as default
+color = "blue"              # Optional: color for visual indicators
+display_order = 1           # Lower numbers appear first
+
+[accounts.personal]
+name = "Personal"
+email = "me@gmail.com"
+provider = "gmail"
+color = "green"
+display_order = 2
+
+[accounts.side]
+name = "Side Project"
+email = "side@project.io"
+provider = "imap"
+color = "yellow"
+display_order = 3
+
+# ==============================================================================
+# KEYBINDINGS CONFIGURATION
+# ==============================================================================
+# Customize your keybindings here. All settings are optional and will fall back
+# to sensible defaults if not specified.
+
+[keybindings]
+# Keys to switch directly to accounts 1-9
+switch_account = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+
+# Navigate between accounts
+next_account = "]"          # Cycle to next account
+prev_account = "["          # Cycle to previous account
+
+# Open mailbox picker (future feature)
+mailbox_picker = "M"
+
+# Add new account wizard (future feature)
+add_account = "A"
+
+# ==============================================================================
+# NOTES
+# ==============================================================================
+# - Account switching: Press 1-9 to jump directly to an account, or use [ and ]
+#   to cycle through accounts. Tab also cycles to the next account.
+# - The current account is displayed in the header: TUME - [Account Name]
+# - Emails are filtered by the currently selected account
+# - All accounts are synced from this config to the database on startup

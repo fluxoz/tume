@@ -1,5 +1,7 @@
 use crate::credentials::{Credentials, CredentialsManager, StorageBackend};
 use crate::db::{DbDraft, DbEmail, EmailDatabase, EmailStatus as DbEmailStatus};
+use crate::config::Config;
+use crate::db::{DbAccount, DbDraft, DbEmail, EmailDatabase, EmailStatus as DbEmailStatus};
 use std::collections::HashSet;
 use std::fmt;
 
@@ -157,6 +159,9 @@ pub struct App {
     pub credentials: Option<Credentials>,
     pub credentials_setup_state: Option<CredentialsSetupState>,
     pub credentials_unlock_state: Option<CredentialsUnlockState>,
+    pub config: Config,
+    pub accounts: Vec<DbAccount>,
+    pub current_account_id: Option<i64>,
 }
 
 impl App {
@@ -178,6 +183,9 @@ impl App {
             credentials: None,
             credentials_setup_state: None,
             credentials_unlock_state: None,
+            config: Config::default(),
+            accounts: Vec::new(),
+            current_account_id: None,
         }
     }
 
@@ -185,13 +193,37 @@ impl App {
     pub async fn with_database(dev_mode: bool) -> anyhow::Result<Self> {
         let db = EmailDatabase::new(None).await?;
 
+        // Load configuration
+        let config = Config::load().unwrap_or_else(|e| {
+            eprintln!("Warning: Failed to load config: {}. Using defaults.", e);
+            Config::default()
+        });
+
+        // Load accounts from database
+        let accounts = db.get_accounts().await?;
+
+        // Sync accounts from config to database if needed
+        let accounts = Self::sync_accounts_from_config(&db, &config, accounts).await?;
+
+        // Determine current account (default or first available)
+        let current_account_id = accounts
+            .iter()
+            .find(|a| a.is_default)
+            .or_else(|| accounts.first())
+            .map(|a| a.id);
+
         // In dev mode, clear and reseed the inbox for testing
         if dev_mode {
             db.clear_inbox().await?;
         }
 
         // Load emails from database or populate with mock data if empty
-        let db_emails = db.get_emails_by_folder("inbox").await?;
+        let db_emails = if let Some(acc_id) = current_account_id {
+            db.get_emails_by_folder_and_account("inbox", Some(acc_id)).await?
+        } else {
+            db.get_emails_by_folder("inbox").await?
+        };
+
         let emails = if db_emails.is_empty() {
             // Populate with mock data on first run or after clearing in dev mode
             let mock_emails = Self::mock_emails();
@@ -210,6 +242,7 @@ impl App {
                     is_flagged: false,
                     folder: "inbox".to_string(),
                     thread_id: None,
+                    account_id: current_account_id,
                 };
                 db.insert_email(&db_email).await?;
             }
@@ -289,7 +322,40 @@ impl App {
             credentials,
             credentials_setup_state,
             credentials_unlock_state,
+            config,
+            accounts,
+            current_account_id,
         })
+    }
+
+    /// Sync accounts from config to database
+    async fn sync_accounts_from_config(
+        db: &EmailDatabase,
+        config: &Config,
+        mut db_accounts: Vec<DbAccount>,
+    ) -> anyhow::Result<Vec<DbAccount>> {
+        // Add accounts from config that don't exist in database
+        for (_, config_account) in &config.accounts {
+            let exists = db_accounts.iter().any(|a| a.email == config_account.email);
+            if !exists {
+                let db_account = DbAccount {
+                    id: 0,
+                    name: config_account.name.clone(),
+                    email: config_account.email.clone(),
+                    provider: config_account.provider.clone(),
+                    is_default: config_account.default,
+                    color: config_account.color.clone(),
+                    display_order: config_account.display_order.unwrap_or(999),
+                };
+                let id = db.save_account(&db_account).await?;
+                db_accounts.push(DbAccount {
+                    id,
+                    ..db_account
+                });
+            }
+        }
+
+        Ok(db_accounts)
     }
 
     fn mock_emails() -> Vec<Email> {
@@ -759,6 +825,7 @@ impl App {
             body: compose.body.clone(),
             created_at: String::new(),
             updated_at: String::new(),
+            account_id: self.current_account_id,
         }
     }
 
@@ -1266,6 +1333,101 @@ impl App {
             (backend, description)
         })
     }
+    /// Get the current account name for display
+    pub fn get_current_account_name(&self) -> Option<String> {
+        self.current_account_id.and_then(|id| {
+            self.accounts
+                .iter()
+                .find(|a| a.id == id)
+                .map(|a| a.name.clone())
+        })
+    }
+
+    /// Switch to a specific account by index (0-based)
+    pub fn switch_to_account(&mut self, index: usize) {
+        if index < self.accounts.len() {
+            let account_id = self.accounts[index].id;
+            let account_name = self.accounts[index].name.clone();
+            self.current_account_id = Some(account_id);
+            self.reload_emails_for_current_account();
+            self.status_message = Some(format!("Switched to account: {}", account_name));
+        }
+    }
+
+    /// Switch to next account
+    pub fn next_account(&mut self) {
+        if self.accounts.is_empty() {
+            return;
+        }
+
+        let current_idx = self.current_account_id.and_then(|id| {
+            self.accounts.iter().position(|a| a.id == id)
+        });
+
+        let next_idx = match current_idx {
+            Some(idx) => (idx + 1) % self.accounts.len(),
+            None => 0,
+        };
+
+        self.switch_to_account(next_idx);
+    }
+
+    /// Switch to previous account
+    pub fn prev_account(&mut self) {
+        if self.accounts.is_empty() {
+            return;
+        }
+
+        let current_idx = self.current_account_id.and_then(|id| {
+            self.accounts.iter().position(|a| a.id == id)
+        });
+
+        let prev_idx = match current_idx {
+            Some(0) => self.accounts.len() - 1,
+            Some(idx) => idx - 1,
+            None => 0,
+        };
+
+        self.switch_to_account(prev_idx);
+    }
+
+    /// Reload emails for the current account
+    fn reload_emails_for_current_account(&mut self) {
+        if let Some(ref db) = self.db {
+            let db_clone = db.clone();
+            let account_id = self.current_account_id;
+            
+            // Use spawn_blocking to avoid nested runtime issues
+            let runtime = tokio::runtime::Handle::try_current();
+            if let Ok(handle) = runtime {
+                let emails_result = std::thread::spawn(move || {
+                    handle.block_on(async {
+                        if let Some(acc_id) = account_id {
+                            db_clone.get_emails_by_folder_and_account("inbox", Some(acc_id)).await
+                        } else {
+                            db_clone.get_emails_by_folder("inbox").await
+                        }
+                    })
+                })
+                .join();
+
+                if let Ok(Ok(db_emails)) = emails_result {
+                    self.emails = db_emails
+                        .into_iter()
+                        .map(|e| Email {
+                            id: e.id,
+                            from: e.from_address,
+                            subject: e.subject,
+                            preview: e.preview,
+                            body: e.body,
+                            date: e.date,
+                        })
+                        .collect();
+                    self.selected_index = 0;
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1594,6 +1756,9 @@ mod tests {
             credentials: None,
             credentials_setup_state: None,
             credentials_unlock_state: None,
+            config: Config::default(),
+            accounts: Vec::new(),
+            current_account_id: None,
         };
 
         // Enter compose mode and add some content
@@ -1665,6 +1830,9 @@ mod tests {
             credentials: None,
             credentials_setup_state: None,
             credentials_unlock_state: None,
+            config: Config::default(),
+            accounts: Vec::new(),
+            current_account_id: None,
         };
 
         // Enter compose mode and add some content
