@@ -229,21 +229,42 @@ impl App {
 
         // Load configuration
         let config = Config::load().unwrap_or_else(|e| {
-            eprintln!("Warning: Failed to load config: {}. Using defaults.", e);
+            let mut debug_log = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("/tmp/tume_debug.log")
+                .ok();
+            if let Some(ref mut log) = debug_log {
+                use std::io::Write;
+                let _ = writeln!(log, "WARNING: Failed to load config: {}. Using defaults.", e);
+            }
             Config::default()
         });
         
-        eprintln!("DEBUG: Config loaded. Accounts in config: {}", config.accounts.len());
-        for (key, account) in &config.accounts {
-            eprintln!("DEBUG: Config account '{}': {} ({})", key, account.name, account.email);
+        let mut debug_log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/tume_debug.log")
+            .ok();
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "\n=== App startup ===");
+            let _ = writeln!(log, "Config loaded. Accounts in config: {}", config.accounts.len());
+            for (key, account) in &config.accounts {
+                let _ = writeln!(log, "  Config account '{}': {} ({})", key, account.name, account.email);
+            }
         }
 
         // Load accounts from database
         let accounts = db.get_accounts().await?;
         
-        eprintln!("DEBUG: Accounts from DB: {}", accounts.len());
-        for account in &accounts {
-            eprintln!("DEBUG: DB account: {} ({})", account.name, account.email);
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "Accounts from DB: {}", accounts.len());
+            for account in &accounts {
+                let _ = writeln!(log, "  DB account: {} ({})", account.name, account.email);
+            }
         }
 
         // Sync accounts from config to database if needed
@@ -318,9 +339,12 @@ impl App {
         // Check if we have a real mailbox configured (in config or database)
         let has_configured_mailbox = !config.accounts.is_empty() || !accounts.is_empty();
         
-        eprintln!("DEBUG: has_configured_mailbox = {} (config.accounts={}, db.accounts={})", 
-            has_configured_mailbox, config.accounts.len(), accounts.len());
-        eprintln!("DEBUG: credentials_exist = {}", credentials_manager.credentials_exist());
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "has_configured_mailbox = {} (config.accounts={}, db.accounts={})", 
+                has_configured_mailbox, config.accounts.len(), accounts.len());
+            let _ = writeln!(log, "credentials_exist = {}", credentials_manager.credentials_exist());
+        }
         
         // Determine initial view based on credentials and mailbox configuration
         let (initial_view, credentials, credentials_setup_state, credentials_unlock_state) = 
@@ -1362,11 +1386,27 @@ impl App {
                 // Try to save config - if it fails, still continue but show error
                 let config_saved = match self.config.save() {
                     Ok(_) => {
-                        eprintln!("DEBUG: Config saved successfully to {:?}", crate::config::Config::config_path());
+                        let mut debug_log = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open("/tmp/tume_debug.log")
+                            .ok();
+                        if let Some(ref mut log) = debug_log {
+                            use std::io::Write;
+                            let _ = writeln!(log, "DEBUG: Config saved successfully to {:?}", crate::config::Config::config_path());
+                        }
                         true
                     },
                     Err(e) => {
-                        eprintln!("ERROR: Failed to save config file: {}", e);
+                        let mut debug_log = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open("/tmp/tume_debug.log")
+                            .ok();
+                        if let Some(ref mut log) = debug_log {
+                            use std::io::Write;
+                            let _ = writeln!(log, "ERROR: Failed to save config file: {}", e);
+                        }
                         self.status_message = Some(format!("ERROR: Failed to save config file: {}. Account will be lost on restart!", e));
                         false
                     }
