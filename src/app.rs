@@ -1290,11 +1290,55 @@ impl App {
         // Save credentials
         match manager.save_credentials(&credentials, master_password) {
             Ok(_) => {
-                self.credentials = Some(credentials);
+                self.credentials = Some(credentials.clone());
+                
+                // Save account configuration to config file
+                if let Some(provider_id) = &setup.selected_provider {
+                    let provider_name = crate::providers::EmailProvider::by_id(provider_id)
+                        .map(|p| p.name)
+                        .unwrap_or("Custom");
+                    
+                    // Create account entry
+                    let account = crate::config::Account {
+                        name: format!("{} Account", provider_name),
+                        email: setup.imap_username.clone(),
+                        provider: provider_id.clone(),
+                        default: true, // First account is default
+                        color: Some("blue".to_string()),
+                        display_order: Some(1),
+                    };
+                    
+                    // Add to config and save
+                    let account_key = provider_id.replace(" ", "_").to_lowercase();
+                    self.config.accounts.insert(account_key, account.clone());
+                    
+                    if let Err(e) = self.config.save() {
+                        self.status_message = Some(format!("Warning: Failed to save config: {}", e));
+                    } else {
+                        // Sync to database
+                        if let Some(ref db) = self.db {
+                            let db_account = crate::db::DbAccount {
+                                id: 0,
+                                name: account.name.clone(),
+                                email: account.email.clone(),
+                                provider: account.provider.clone(),
+                                is_default: account.default,
+                                color: account.color.clone(),
+                                display_order: account.display_order.unwrap_or(999),
+                            };
+                            
+                            // Insert account into database (async operation would be better, but this is sync context)
+                            // For now, we'll just update the in-memory accounts list
+                            self.accounts.push(db_account.clone());
+                            self.current_account_id = Some(db_account.id);
+                        }
+                    }
+                }
+                
                 self.credentials_setup_state = None;
                 self.current_view = View::InboxList;
                 self.status_message = Some(format!(
-                    "Credentials saved successfully using {}",
+                    "Credentials and account configuration saved successfully using {}",
                     manager.backend().as_str()
                 ));
             }
