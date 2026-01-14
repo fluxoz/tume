@@ -178,9 +178,42 @@ impl CredentialsManager {
 
     /// Check if credentials exist in keyring
     fn keyring_credentials_exist(&self) -> bool {
+        let mut debug_log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/tume_debug.log")
+            .ok();
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "\n=== keyring_credentials_exist() called ===");
+            let _ = writeln!(log, "SERVICE_NAME: {}", SERVICE_NAME);
+            let _ = writeln!(log, "USERNAME: {}", USERNAME);
+        }
+        
         match keyring::Entry::new(SERVICE_NAME, USERNAME) {
-            Ok(entry) => entry.get_password().is_ok(),
-            Err(_) => false,
+            Ok(entry) => {
+                let result = entry.get_password();
+                if let Some(ref mut log) = debug_log {
+                    use std::io::Write;
+                    match &result {
+                        Ok(pw) => {
+                            let _ = writeln!(log, "get_password() succeeded, password length: {}", pw.len());
+                        },
+                        Err(e) => {
+                            let _ = writeln!(log, "get_password() failed: {:?}", e);
+                        }
+                    }
+                }
+                result.is_ok()
+            },
+            Err(e) => {
+                if let Some(ref mut log) = debug_log {
+                    use std::io::Write;
+                    let _ = writeln!(log, "Failed to create keyring entry: {:?}", e);
+                }
+                false
+            }
         }
     }
 
@@ -292,15 +325,44 @@ impl CredentialsManager {
     // ============ System Keyring Operations ============
 
     fn save_to_keyring(&self, credentials: &Credentials) -> Result<()> {
+        let mut debug_log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/tume_debug.log")
+            .ok();
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "\n=== save_to_keyring() called ===");
+            let _ = writeln!(log, "SERVICE_NAME: {}", SERVICE_NAME);
+            let _ = writeln!(log, "USERNAME: {}", USERNAME);
+        }
+        
         let entry = keyring::Entry::new(SERVICE_NAME, USERNAME)
             .context("Failed to create keyring entry")?;
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "Keyring entry created successfully");
+        }
         
         // Serialize credentials to JSON
         let json = serde_json::to_string(credentials)
             .context("Failed to serialize credentials")?;
         
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "Credentials serialized to JSON ({} bytes)", json.len());
+        }
+        
         entry.set_password(&json)
             .context("Failed to save credentials to keyring")?;
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "Keyring set_password() succeeded");
+            let _ = writeln!(log, "Verifying: can retrieve password = {}", entry.get_password().is_ok());
+        }
         
         Ok(())
     }
