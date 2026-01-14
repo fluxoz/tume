@@ -1,6 +1,7 @@
 use crate::credentials::{Credentials, CredentialsManager, StorageBackend};
 use crate::config::Config;
 use crate::db::{DbAccount, DbDraft, DbEmail, EmailDatabase, EmailStatus as DbEmailStatus};
+use crate::theme::Theme;
 use std::collections::HashSet;
 use std::fmt;
 
@@ -195,6 +196,7 @@ pub struct App {
     pub accounts: Vec<DbAccount>,
     pub current_account_id: Option<i64>,
     pub email_sync_manager: Option<crate::email_sync::EmailSyncManager>,
+    pub theme: Theme,
 }
 
 impl App {
@@ -220,6 +222,7 @@ impl App {
             accounts: Vec::new(),
             current_account_id: None,
             email_sync_manager: None,
+            theme: Theme::default(),
         }
     }
 
@@ -400,6 +403,7 @@ impl App {
             credentials: credentials.clone(),
             credentials_setup_state,
             credentials_unlock_state,
+            theme: config.get_theme(),
             config,
             accounts,
             current_account_id,
@@ -2014,6 +2018,7 @@ mod tests {
             accounts: Vec::new(),
             current_account_id: None,
             email_sync_manager: None,
+            theme: Theme::default(),
         };
 
         // Enter compose mode and add some content
@@ -2089,6 +2094,7 @@ mod tests {
             accounts: Vec::new(),
             current_account_id: None,
             email_sync_manager: None,
+            theme: Theme::default(),
         };
 
         // Enter compose mode and add some content
