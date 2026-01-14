@@ -84,6 +84,19 @@ impl CredentialsManager {
         let backend = Self::detect_available_backend();
         let file_path = Self::default_file_path();
         
+        let mut debug_log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/tume_debug.log")
+            .ok();
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "\n=== CredentialsManager::new() ===");
+            let _ = writeln!(log, "Detected backend: {:?}", backend);
+            let _ = writeln!(log, "File path: {:?}", file_path);
+        }
+        
         Self { backend, file_path }
     }
 
@@ -137,10 +150,30 @@ impl CredentialsManager {
 
     /// Check if credentials exist in the current backend
     pub fn credentials_exist(&self) -> bool {
-        match self.backend {
+        let mut debug_log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/tume_debug.log")
+            .ok();
+        
+        let result = match self.backend {
             StorageBackend::SystemKeyring => self.keyring_credentials_exist(),
-            StorageBackend::EncryptedFile => self.file_path.exists(),
+            StorageBackend::EncryptedFile => {
+                let exists = self.file_path.exists();
+                if let Some(ref mut log) = debug_log {
+                    use std::io::Write;
+                    let _ = writeln!(log, "Checking encrypted file credentials: {:?} exists = {}", self.file_path, exists);
+                }
+                exists
+            },
+        };
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "credentials_exist({:?}) = {}", self.backend, result);
         }
+        
+        result
     }
 
     /// Check if credentials exist in keyring
@@ -153,14 +186,43 @@ impl CredentialsManager {
 
     /// Save credentials using the current backend
     pub fn save_credentials(&self, credentials: &Credentials, master_password: Option<&str>) -> Result<()> {
-        match self.backend {
+        let mut debug_log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/tume_debug.log")
+            .ok();
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "\n=== save_credentials() called ===");
+            let _ = writeln!(log, "Backend: {:?}", self.backend);
+            let _ = writeln!(log, "File path: {:?}", self.file_path);
+            let _ = writeln!(log, "Master password provided: {}", master_password.is_some());
+        }
+        
+        let result = match self.backend {
             StorageBackend::SystemKeyring => self.save_to_keyring(credentials),
             StorageBackend::EncryptedFile => {
                 let password = master_password
                     .ok_or_else(|| anyhow!("Master password required for encrypted file storage"))?;
                 self.save_to_encrypted_file(credentials, password)
             }
+        };
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            match &result {
+                Ok(_) => {
+                    let _ = writeln!(log, "Credentials saved successfully");
+                    let _ = writeln!(log, "File exists after save: {}", self.file_path.exists());
+                },
+                Err(e) => {
+                    let _ = writeln!(log, "Failed to save credentials: {}", e);
+                }
+            }
         }
+        
+        result
     }
 
     /// Load credentials using the current backend
