@@ -1,11 +1,14 @@
 # TUME - Terminal Email Client
 
-A Terminal User Interface (TUI) email client built with Rust, featuring vim-style keybindings for efficient email management.
+A Terminal User Interface (TUI) email client built with Rust, featuring vim-style keybindings, beautiful Neovim-inspired themes, and efficient email management.
 
 ## Features
 
 ### Current Implementation
 
+- **Beautiful Theming**: Five built-in Neovim-inspired color schemes (Gruvbox, Dracula, Nord, Solarized, Tokyo Night)
+- **Customizable UI**: Full theme customization via config file with RGB color support
+- **Enhanced Status Bar**: Mode indicators, email count, theme display, and contextual help
 - **Multi-Account Support**: Manage multiple email accounts with easy switching (1-9, Tab, [/])
 - **Configuration**: TOML-based configuration at `~/.config/tume/config.toml`
 - **Inbox View**: Browse a list of emails with sender, subject, date, and preview
@@ -243,6 +246,75 @@ add_account = "A"
 #### Keybindings
 
 All keybindings are customizable. The default keybindings shown above can be modified to suit your preferences.
+
+## UI Theming & Customization
+
+TUME features a flexible theming system inspired by popular Neovim color schemes, allowing you to customize the entire user interface to match your preferences.
+
+### Built-in Themes
+
+TUME includes five carefully crafted themes:
+
+#### 1. Gruvbox Dark (Default)
+- Retro groove color scheme with warm palette
+- Excellent contrast and readability
+- Perfect for extended reading sessions
+
+#### 2. Dracula
+- Dark theme with vibrant purple and pink accents
+- Modern and elegant appearance
+- High contrast for excellent readability
+
+#### 3. Nord
+- Arctic, north-bluish color palette
+- Frost-colored and calm appearance
+- Excellent for long coding/reading sessions
+
+#### 4. Solarized Dark
+- Precision colors for machines and people
+- Scientifically designed for readability
+- Classic theme with a loyal following
+
+#### 5. Tokyo Night
+- Dark theme inspired by Tokyo's night cityscape
+- Clean with vibrant blue and purple accents
+- Modern and stylish appearance
+
+### Selecting a Theme
+
+Edit your config file at `~/.config/tume/config.toml`:
+
+```toml
+[ui]
+theme = "gruvbox-dark"  # Options: gruvbox-dark, dracula, nord, solarized-dark, tokyo-night
+```
+
+### Custom Theme Creation
+
+For advanced customization, you can define your own theme. See `config.toml.example` for a complete example with all customizable color options including:
+
+- Base colors (background, foreground)
+- UI elements (borders, titles, status bar)
+- Text styles (normal, dim, bold, highlight)
+- Interactive elements (cursor, selection, visual mode)
+- Status indicators (success, warning, error, info)
+- Email list colors
+- Compose view colors
+- Markdown preview colors
+
+All colors support three formats:
+1. **Named Colors**: `{ Named = "red" }`
+2. **RGB Colors**: `{ Rgb = [255, 128, 0] }`
+3. **Indexed Colors**: `{ Indexed = 42 }`
+
+### Enhanced Status Bar
+
+The status bar displays:
+- **Mode Indicator**: Current mode (NORMAL, INSERT, VISUAL LINE)
+- **Status Messages**: Color-coded messages
+- **Email Count**: Number of emails in current view
+- **Theme Name**: Currently active theme
+- **Contextual Help**: Mode-specific keybinding hints
 
 ### Multi-Account Support
 
