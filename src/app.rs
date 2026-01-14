@@ -1354,6 +1354,21 @@ impl App {
             smtp_password: setup.smtp_password.clone(),
         };
 
+        // Debug log before save
+        let mut debug_log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/tume_debug.log")
+            .ok();
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "\n=== About to call save_credentials() ===");
+            let _ = writeln!(log, "Backend: {:?}", manager.backend());
+            let _ = writeln!(log, "IMAP server: {}", credentials.imap_server);
+            let _ = writeln!(log, "IMAP username: {}", credentials.imap_username);
+            let _ = writeln!(log, "Master password: {:?}", master_password.is_some());
+        }
+
         // Save credentials
         match manager.save_credentials(&credentials, master_password) {
             Ok(_) => {
