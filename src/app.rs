@@ -305,38 +305,44 @@ impl App {
         // Initialize credentials manager
         let credentials_manager = CredentialsManager::new();
         
-        // Determine initial view based on credentials state
+        // Check if we have a real mailbox configured (in config or database)
+        let has_configured_mailbox = !config.accounts.is_empty() || !accounts.is_empty();
+        
+        // Determine initial view based on credentials and mailbox configuration
         let (initial_view, credentials, credentials_setup_state, credentials_unlock_state) = 
-            if !credentials_manager.credentials_exist() {
-                // No credentials exist - show setup screen
+            if has_configured_mailbox && credentials_manager.credentials_exist() {
+                // Have mailbox and credentials - check if they need unlocking
+                if credentials_manager.backend() == StorageBackend::EncryptedFile {
+                    // Credentials exist but need to be unlocked
+                    (
+                        View::CredentialsUnlock,
+                        None,
+                        None,
+                        Some(CredentialsUnlockState::new()),
+                    )
+                } else {
+                    // Credentials exist in keyring - load them automatically
+                    match credentials_manager.load_credentials(None) {
+                        Ok(creds) => (View::InboxList, Some(creds), None, None),
+                        Err(_) => {
+                            // Failed to load - show setup to re-enter credentials
+                            (
+                                View::CredentialsSetup,
+                                None,
+                                Some(CredentialsSetupState::new(credentials_manager.backend())),
+                                None,
+                            )
+                        }
+                    }
+                }
+            } else {
+                // No configured mailbox or no credentials - show setup screen
                 (
                     View::CredentialsSetup,
                     None,
                     Some(CredentialsSetupState::new(credentials_manager.backend())),
                     None,
                 )
-            } else if credentials_manager.backend() == StorageBackend::EncryptedFile {
-                // Credentials exist but need to be unlocked
-                (
-                    View::CredentialsUnlock,
-                    None,
-                    None,
-                    Some(CredentialsUnlockState::new()),
-                )
-            } else {
-                // Credentials exist in keyring - load them automatically
-                match credentials_manager.load_credentials(None) {
-                    Ok(creds) => (View::InboxList, Some(creds), None, None),
-                    Err(_) => {
-                        // Failed to load - show setup screen
-                        (
-                            View::CredentialsSetup,
-                            None,
-                            Some(CredentialsSetupState::new(credentials_manager.backend())),
-                            None,
-                        )
-                    }
-                }
             };
 
         Ok(Self {
