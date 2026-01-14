@@ -1,5 +1,4 @@
 use crate::credentials::{Credentials, CredentialsManager, StorageBackend};
-use crate::db::{DbDraft, DbEmail, EmailDatabase, EmailStatus as DbEmailStatus};
 use crate::config::Config;
 use crate::db::{DbAccount, DbDraft, DbEmail, EmailDatabase, EmailStatus as DbEmailStatus};
 use std::collections::HashSet;
