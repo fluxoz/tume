@@ -12,6 +12,8 @@ use crate::credentials::StorageBackend;
 
 // Layout constants
 const MIN_WIDTH_FOR_VERTICAL_SPLIT: u16 = 120;
+const MASTER_PASSWORD_LABEL: &str = "Master Password: ";
+const MASTER_PASSWORD_LABEL_LEN: u16 = 17; // Length of "Master Password: "
 
 // Helper function to convert ratatui_core::Color to ratatui::Color
 fn convert_color(core_color: ratatui_core::style::Color) -> Color {
@@ -862,7 +864,7 @@ fn render_credentials_unlock(f: &mut Frame, area: Rect, app: &App) {
     // Password field - render label and input on the same line like compose view
     let password_display = "*".repeat(unlock.master_password.len());
     let password_field = Paragraph::new(Line::from(vec![
-        Span::styled("Master Password: ", Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(MASTER_PASSWORD_LABEL, Style::default().add_modifier(Modifier::BOLD)),
         Span::styled(
             password_display,
             Style::default().fg(Color::Green),
@@ -890,8 +892,7 @@ fn render_credentials_unlock(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(message_para, chunks[4]);
 
     // Set cursor position in password field
-    // The label "Master Password: " is 17 characters long
-    let cursor_x = chunks[2].x + 1 + 17 + unlock.cursor_position.min(u16::MAX as usize) as u16; // border + label + cursor position
+    let cursor_x = chunks[2].x + 1 + MASTER_PASSWORD_LABEL_LEN + unlock.cursor_position.min(u16::MAX as usize) as u16; // border + label + cursor position
     let cursor_y = chunks[2].y + 1; // border
     f.set_cursor_position((
         cursor_x.min(chunks[2].right().saturating_sub(2)),
