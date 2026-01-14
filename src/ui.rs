@@ -7,9 +7,8 @@ use ratatui::{
 };
 use tui_markdown::from_str;
 
-use crate::app::{App, ComposeField, ComposeMode, View, CredentialField};
+use crate::app::{App, ComposeField, ComposeMode, View, CredentialField, CredentialsMode};
 use crate::credentials::StorageBackend;
-use crate::theme::Theme;
 
 // Layout constants
 const MIN_WIDTH_FOR_VERTICAL_SPLIT: u16 = 120;
