@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Represents email server credentials
-#[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Serialize, Deserialize, Zeroize, ZeroizeOnDrop, Clone)]
 pub struct Credentials {
     pub imap_server: String,
     pub imap_port: u16,

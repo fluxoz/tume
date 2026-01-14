@@ -2,18 +2,19 @@
 /// 
 /// This module provides:
 /// - Inbox rules for automatic email filtering and organization
-/// - Stub implementations for IMAP/SMTP email fetching (to be implemented)
+/// - IMAP email fetching with TLS support
+/// - SMTP email sending (stub - to be implemented)
 /// 
 /// ## Implementation Status:
 /// - ✅ Inbox rules engine (fully implemented)
-/// - ⏳ IMAP email fetching (stub - requires async-imap integration)
+/// - ✅ IMAP email fetching (basic implementation)
 /// - ⏳ SMTP email sending (stub - requires lettre integration)
 /// - ⏳ Folder management (stub - requires IMAP integration)
 /// - ⏳ OAuth2 support (not started - needed for Gmail/Outlook)
 
 use crate::credentials::Credentials;
 use crate::db::{DbEmail, EmailStatus as DbEmailStatus};
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, Context};
 
 /// Inbox rule for automatic filtering and organization
 #[derive(Debug, Clone)]
@@ -75,12 +76,12 @@ pub enum RuleAction {
 /// Status of email sync operation
 #[derive(Debug, Clone)]
 pub enum SyncStatus {
-    NotImplemented,
     Success { fetched: usize, sent: usize },
     Error(String),
 }
 
-/// IMAP email fetcher (stub implementation)
+/// IMAP email fetcher
+#[derive(Clone)]
 pub struct ImapClient {
     credentials: Credentials,
 }
@@ -91,39 +92,199 @@ impl ImapClient {
         Self { credentials }
     }
 
-    /// Fetch emails from IMAP server (stub)
-    pub async fn fetch_emails(&self) -> Result<Vec<crate::app::Email>> {
-        // Stub: Return error indicating not implemented
-        Err(anyhow!(
-            "IMAP email fetching not yet implemented. \
-            Server: {} (port {}). \
-            Implementation requires async-imap integration. \
-            See project issues for implementation status.",
-            self.credentials.imap_server,
-            self.credentials.imap_port
-        ))
+    /// Fetch emails from IMAP server
+    pub async fn fetch_emails(&self, folder: &str, limit: Option<usize>) -> Result<Vec<DbEmail>> {
+        let credentials = self.credentials.clone();
+        let folder = folder.to_string();
+        
+        // Use spawn_blocking to run blocking IMAP operations in a thread pool
+        tokio::task::spawn_blocking(move || {
+            Self::fetch_emails_blocking(&credentials, &folder, limit)
+        })
+        .await
+        .context("Task join error")?
     }
 
-    /// Connect to IMAP server and test connection (stub)
+    /// Blocking IMAP fetch implementation
+    fn fetch_emails_blocking(
+        credentials: &Credentials,
+        folder: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<DbEmail>> {
+        // Connect to IMAP server with TLS
+        let domain = &credentials.imap_server;
+        let port = credentials.imap_port;
+        
+        let tls = native_tls::TlsConnector::builder()
+            .build()
+            .context("Failed to build TLS connector")?;
+        
+        let client = imap::connect((domain.as_str(), port), domain, &tls)
+            .context(format!("Failed to connect to {}:{}", domain, port))?;
+
+        // Login
+        let mut session = client
+            .login(&credentials.imap_username, &credentials.imap_password)
+            .map_err(|e| anyhow!("IMAP login failed: {:?}", e.0))?;
+
+        // Select mailbox
+        session.select(folder)
+            .context(format!("Failed to select folder: {}", folder))?;
+
+        // Search for all messages
+        let message_ids = session.search("ALL")
+            .context("Failed to search messages")?;
+
+        // Convert HashSet to Vec and limit results if requested
+        let mut message_vec: Vec<u32> = message_ids.into_iter().collect();
+        message_vec.sort_unstable();
+        message_vec.reverse(); // Most recent first
+        
+        let message_ids: Vec<u32> = if let Some(limit) = limit {
+            message_vec.into_iter().take(limit).collect()
+        } else {
+            message_vec
+        };
+
+        let mut emails = Vec::new();
+
+        // Fetch each message
+        for msg_id in message_ids {
+            match session.fetch(msg_id.to_string(), "(FLAGS RFC822)") {
+                Ok(messages) => {
+                    for fetch in messages.iter() {
+                        if let Some(body) = fetch.body() {
+                            match Self::parse_email(body, fetch.flags(), folder) {
+                                Ok(email) => emails.push(email),
+                                Err(e) => {
+                                    eprintln!("Failed to parse email {}: {}", msg_id, e);
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to fetch message {}: {}", msg_id, e);
+                    continue;
+                }
+            }
+        }
+
+        // Logout
+        session.logout().ok();
+
+        Ok(emails)
+    }
+
+    /// Parse email from raw RFC822 bytes
+    fn parse_email(body: &[u8], flags: &[imap::types::Flag], folder: &str) -> Result<DbEmail> {
+        let parsed = mail_parser::MessageParser::default()
+            .parse(body)
+            .ok_or_else(|| anyhow!("Failed to parse email"))?;
+
+        let from = parsed
+            .from()
+            .and_then(|addrs| addrs.first())
+            .and_then(|addr| addr.address())
+            .unwrap_or("unknown@unknown.com")
+            .to_string();
+
+        let to = parsed
+            .to()
+            .and_then(|addrs| addrs.first())
+            .and_then(|addr| addr.address())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "".to_string());
+
+        let subject = parsed
+            .subject()
+            .unwrap_or("(No Subject)")
+            .to_string();
+
+        let body_text = parsed
+            .body_text(0)
+            .or_else(|| parsed.body_html(0))
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "".to_string());
+
+        let preview = body_text
+            .lines()
+            .next()
+            .unwrap_or("")
+            .chars()
+            .take(100)
+            .collect::<String>();
+
+        let date = parsed
+            .date()
+            .map(|dt| format!("{}", dt))
+            .unwrap_or_else(|| {
+                use std::time::{SystemTime, UNIX_EPOCH};
+                let timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                format!("timestamp: {}", timestamp)
+            });
+
+        // Check if message is unread
+        let is_unread = !flags.iter().any(|f| matches!(f, imap::types::Flag::Seen));
+        let is_flagged = flags.iter().any(|f| matches!(f, imap::types::Flag::Flagged));
+
+        Ok(DbEmail {
+            id: 0,
+            from_address: from,
+            to_addresses: to,
+            cc_addresses: None,
+            bcc_addresses: None,
+            subject,
+            body: body_text,
+            preview,
+            date,
+            status: if is_unread { DbEmailStatus::Unread } else { DbEmailStatus::Read },
+            is_flagged,
+            folder: folder.to_string(),
+            thread_id: None,
+            account_id: None,
+        })
+    }
+
+    /// Connect to IMAP server and test connection
     pub async fn test_connection(&self) -> Result<()> {
-        // Stub: Return informational error
-        Err(anyhow!(
-            "IMAP connection testing not yet implemented. \
-            Would connect to {}:{} with user {}. \
-            This feature is coming soon.",
-            self.credentials.imap_server,
-            self.credentials.imap_port,
-            self.credentials.imap_username
-        ))
+        let credentials = self.credentials.clone();
+        
+        tokio::task::spawn_blocking(move || {
+            let domain = &credentials.imap_server;
+            let port = credentials.imap_port;
+            
+            let tls = native_tls::TlsConnector::builder()
+                .build()
+                .context("Failed to build TLS connector")?;
+            
+            let client = imap::connect((domain.as_str(), port), domain, &tls)
+                .context(format!("Failed to connect to {}:{}", domain, port))?;
+
+            let mut session = client
+                .login(&credentials.imap_username, &credentials.imap_password)
+                .map_err(|e| anyhow!("IMAP login failed: {:?}", e.0))?;
+
+            session.logout().ok();
+            Ok(())
+        })
+        .await
+        .context("Task join error")?
     }
 
-    /// Sync a specific folder (stub)
-    pub async fn sync_folder(&self, _folder: &str) -> Result<usize> {
-        Err(anyhow!("IMAP folder sync not yet implemented"))
+    /// Sync a specific folder
+    pub async fn sync_folder(&self, folder: &str) -> Result<usize> {
+        let emails = self.fetch_emails(folder, None).await?;
+        Ok(emails.len())
     }
 }
 
 /// SMTP email sender (stub implementation)
+#[derive(Clone)]
 pub struct SmtpClient {
     credentials: Credentials,
 }
@@ -166,6 +327,7 @@ impl SmtpClient {
 }
 
 /// Email sync manager that coordinates IMAP/SMTP operations and inbox rules
+#[derive(Clone)]
 pub struct EmailSyncManager {
     imap_client: Option<ImapClient>,
     smtp_client: Option<SmtpClient>,
@@ -247,21 +409,33 @@ impl EmailSyncManager {
             .collect()
     }
 
-    // ============ IMAP/SMTP Operations (Stubs) ============
+    // ============ IMAP/SMTP Operations ============
 
-    /// Perform full email sync (stub)
-    pub async fn sync(&self) -> Result<SyncStatus> {
+    /// Perform full email sync from IMAP inbox
+    pub async fn sync(&self, folder: &str, limit: Option<usize>) -> Result<SyncStatus> {
         if self.imap_client.is_none() {
             return Ok(SyncStatus::Error(
                 "No credentials configured. Please set up email credentials first.".to_string()
             ));
         }
 
-        // Return not implemented status
-        Ok(SyncStatus::NotImplemented)
+        let client = self.imap_client.as_ref().unwrap();
+        
+        match client.fetch_emails(folder, limit).await {
+            Ok(emails) => {
+                let count = emails.len();
+                Ok(SyncStatus::Success { fetched: count, sent: 0 })
+            }
+            Err(e) => Ok(SyncStatus::Error(format!("Sync failed: {}", e))),
+        }
     }
 
-    /// Test both IMAP and SMTP connections (stub)
+    /// Get IMAP client for direct operations
+    pub fn imap_client(&self) -> Option<&ImapClient> {
+        self.imap_client.as_ref()
+    }
+
+    /// Test both IMAP and SMTP connections
     pub async fn test_connections(&self) -> Result<(bool, bool)> {
         let imap_ok = if let Some(ref client) = self.imap_client {
             client.test_connection().await.is_ok()
@@ -329,11 +503,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_imap_client_not_implemented() {
+    async fn test_imap_client_connection_requires_valid_server() {
         let client = ImapClient::new(create_test_credentials());
-        let result = client.fetch_emails().await;
+        // This will fail because we're using fake credentials
+        // But it tests that the code path exists
+        let result = client.test_connection().await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not yet implemented"));
     }
 
     #[tokio::test]
@@ -351,13 +526,6 @@ mod tests {
 
         let manager_no_creds = EmailSyncManager::new(None);
         assert!(!manager_no_creds.is_configured());
-    }
-
-    #[tokio::test]
-    async fn test_sync_not_implemented() {
-        let manager = EmailSyncManager::new(Some(create_test_credentials()));
-        let status = manager.sync().await.unwrap();
-        matches!(status, SyncStatus::NotImplemented);
     }
 
     // Rules tests

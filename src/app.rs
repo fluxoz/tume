@@ -1032,14 +1032,48 @@ impl App {
         self.should_quit = true;
     }
 
-    /// Attempt to sync emails (stub - shows not implemented message)
+    /// Attempt to sync emails from IMAP server
     pub fn attempt_email_sync(&mut self) {
         if let Some(ref sync_manager) = self.email_sync_manager {
             if sync_manager.is_configured() {
-                self.status_message = Some(
-                    "Email sync not yet implemented. IMAP/SMTP integration coming soon. \
-                    Currently displaying mock data. See project issues for implementation status.".to_string()
-                );
+                // Trigger async sync in background
+                if let Some(ref sync_manager) = self.email_sync_manager {
+                    if let Some(ref db) = self.db {
+                        let sync_manager_clone = sync_manager.clone();
+                        let db_clone = db.clone();
+                        let account_id = self.current_account_id;
+                        
+                        // Spawn background task to fetch and store emails
+                        tokio::spawn(async move {
+                            match sync_manager_clone.imap_client() {
+                                Some(client) => {
+                                    match client.fetch_emails("INBOX", Some(50)).await {
+                                        Ok(emails) => {
+                                            // Store emails in database
+                                            for mut email in emails {
+                                                email.account_id = account_id;
+                                                if let Err(e) = db_clone.insert_email(&email).await {
+                                                    eprintln!("Failed to store email: {}", e);
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Email sync failed: {}", e);
+                                        }
+                                    }
+                                }
+                                None => {
+                                    eprintln!("No IMAP client available");
+                                }
+                            }
+                        });
+                        
+                        self.status_message = Some("Email sync started. Fetching from server...".to_string());
+                        
+                        // Reload emails from database after a short delay
+                        self.reload_emails_for_current_account();
+                    }
+                }
             } else {
                 self.status_message = Some(
                     "No credentials configured. Please set up email credentials first.".to_string()
