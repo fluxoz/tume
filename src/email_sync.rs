@@ -169,6 +169,8 @@ impl SmtpClient {
 pub struct EmailSyncManager {
     imap_client: Option<ImapClient>,
     smtp_client: Option<SmtpClient>,
+    // Note: Vec is used for simplicity. For large rule sets, consider HashMap<i64, InboxRule>
+    // for O(1) lookups in remove_rule, update_rule, and set_rule_enabled operations.
     rules: Vec<InboxRule>,
 }
 
@@ -300,6 +302,14 @@ mod tests {
     }
 
     fn create_test_email(from: &str, subject: &str, body: &str) -> DbEmail {
+        // Use current timestamp to avoid test expiration issues
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let date = format!("Test date: {}", timestamp);
+        
         DbEmail {
             id: 1,
             from_address: from.to_string(),
@@ -309,7 +319,7 @@ mod tests {
             subject: subject.to_string(),
             body: body.to_string(),
             preview: body.chars().take(100).collect(),
-            date: "2026-01-14 12:00".to_string(),
+            date,
             status: DbEmailStatus::Unread,
             is_flagged: false,
             folder: "inbox".to_string(),
