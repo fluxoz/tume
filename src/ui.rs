@@ -7,7 +7,7 @@ use ratatui::{
 };
 use tui_markdown::from_str;
 
-use crate::app::{App, ComposeField, ComposeMode, View, CredentialField};
+use crate::app::{App, ComposeField, ComposeMode, View, CredentialField, CredentialsMode};
 use crate::credentials::StorageBackend;
 
 // Layout constants
@@ -83,7 +83,12 @@ pub fn draw(f: &mut Frame, app: &App) {
 
 fn render_header(f: &mut Frame, area: Rect, app: &App) {
     // Build header text with account info if available
-    let header_text = if let Some(account_name) = app.get_current_account_name() {
+    // Don't show account name during credentials setup/unlock
+    let header_text = if app.current_view == View::CredentialsSetup 
+        || app.current_view == View::CredentialsUnlock 
+        || app.current_view == View::CredentialsManagement {
+        "TUME - Terminal Email Client".to_string()
+    } else if let Some(account_name) = app.get_current_account_name() {
         format!("TUME - Terminal Email Client [{}]", account_name)
     } else {
         "TUME - Terminal Email Client".to_string()
@@ -291,7 +296,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
             if app.visual_mode {
                 "j/k: Extend selection | d: Delete selected | a: Archive selected | Esc: Exit visual mode"
             } else {
-                "j/k: Navigate | Enter/l: Read | V: Visual mode | p: Preview | d: Delete | a: Archive | c: Compose | m: Creds | q: Quit"
+                "j/k: Navigate | Enter/l: Read | V: Visual mode | p: Preview | s: Sync | d: Delete | a: Archive | c: Compose | m: Creds | q: Quit"
             }
         }
         View::EmailDetail => {
@@ -310,7 +315,22 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
             }
         }
         View::CredentialsSetup => {
-            "Tab/j/k: Navigate fields | Type to edit | P: Toggle password visibility | Enter: Save | Esc: Cancel"
+            if let Some(setup) = &app.credentials_setup_state {
+                if setup.provider_selection_mode {
+                    "j/k: Navigate | Enter/l: Select provider | Esc/q: Cancel"
+                } else {
+                    match setup.mode {
+                        crate::app::CredentialsMode::Normal => {
+                            "i: Insert | j/k: Navigate fields | h: Back to providers | P: Toggle passwords | Enter: Save | Esc/q: Cancel"
+                        }
+                        crate::app::CredentialsMode::Insert => {
+                            "Esc: Normal mode | Type to edit field | Left/Right: Move cursor"
+                        }
+                    }
+                }
+            } else {
+                "i: Insert | j/k: Navigate fields | P: Toggle passwords | Enter: Save | Esc: Cancel"
+            }
         }
         View::CredentialsUnlock => {
             "Type master password | Enter: Unlock | Esc: Quit"
@@ -554,13 +574,123 @@ fn render_credentials_setup(f: &mut Frame, area: Rect, app: &App) {
         None => return,
     };
 
+    // Check if we're in provider selection mode
+    if setup.provider_selection_mode {
+        render_provider_selection(f, area, app);
+    } else {
+        render_credentials_fields(f, area, app);
+    }
+}
+
+fn render_provider_selection(f: &mut Frame, area: Rect, app: &App) {
+    let setup = match &app.credentials_setup_state {
+        Some(s) => s,
+        None => return,
+    };
+
     let backend = app.credentials_manager
         .as_ref()
         .map(|m| m.backend())
-        .unwrap_or(StorageBackend::SystemKeyring);
+        .unwrap_or(StorageBackend::EncryptedFile);
 
-    // Title with backend info
-    let title = format!(" Credentials Setup - {} ", backend.as_str());
+    // Title
+    let title = " Email Provider Setup ";
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .style(Style::default().fg(Color::Cyan));
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Split into sections: instructions and provider list
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5),  // Instructions
+            Constraint::Min(10),    // Provider list
+        ])
+        .split(inner);
+
+    // Render instructions
+    let instructions = vec![
+        Line::from(Span::styled(
+            "Select your email provider",
+            Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+        )),
+        Line::from(""),
+        Line::from(format!("Credentials will be stored using: {}", backend.as_str())),
+    ];
+    let instructions_para = Paragraph::new(instructions).wrap(Wrap { trim: false });
+    f.render_widget(instructions_para, chunks[0]);
+
+    // Render provider list
+    let providers = crate::providers::EmailProvider::all();
+    let items: Vec<ListItem> = providers
+        .iter()
+        .enumerate()
+        .map(|(i, provider)| {
+            let style = if i == setup.provider_list_index {
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+
+            let marker = if i == setup.provider_list_index {
+                "▸ "
+            } else {
+                "  "
+            };
+
+            let content = vec![
+                Line::from(vec![
+                    Span::styled(marker, style),
+                    Span::styled(provider.name, style),
+                ]),
+                Line::from(vec![
+                    Span::raw("    "),
+                    Span::styled(provider.description, Style::default().fg(Color::DarkGray)),
+                ]),
+            ];
+
+            ListItem::new(content).style(Style::default())
+        })
+        .collect();
+
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Available Providers"),
+    );
+    f.render_widget(list, chunks[1]);
+}
+
+fn render_credentials_fields(f: &mut Frame, area: Rect, app: &App) {
+    let setup = match &app.credentials_setup_state {
+        Some(s) => s,
+        None => return,
+    };
+
+    let backend = app.credentials_manager
+        .as_ref()
+        .map(|m| m.backend())
+        .unwrap_or(crate::credentials::StorageBackend::EncryptedFile);
+
+    // Get selected provider name for title
+    let provider_name = setup.selected_provider
+        .as_ref()
+        .and_then(|id| crate::providers::EmailProvider::by_id(id))
+        .map(|p| p.name)
+        .unwrap_or("Custom");
+
+    // Title with mode indicator
+    let mode_str = match setup.mode {
+        crate::app::CredentialsMode::Normal => "NORMAL",
+        crate::app::CredentialsMode::Insert => "INSERT",
+    };
+    let title = format!(" {} - Credentials Setup [{}] ", provider_name, mode_str);
     let block = Block::default()
         .borders(Borders::ALL)
         .title(title)
@@ -586,7 +716,7 @@ fn render_credentials_setup(f: &mut Frame, area: Rect, app: &App) {
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from(backend.description()),
+        Line::from(format!("Storage: {}", backend.description())),
     ];
     let instructions_para = Paragraph::new(instructions).wrap(Wrap { trim: false });
     f.render_widget(instructions_para, chunks[0]);
@@ -602,22 +732,22 @@ fn render_credentials_setup(f: &mut Frame, area: Rect, app: &App) {
     
     // IMAP fields
     field_lines.push(Line::from(Span::styled("IMAP Configuration", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))));
-    field_lines.push(build_field_line("IMAP Server:", &setup.imap_server, setup.current_field == CredentialField::ImapServer));
-    field_lines.push(build_field_line("IMAP Port:", &setup.imap_port, setup.current_field == CredentialField::ImapPort));
-    field_lines.push(build_field_line("IMAP Username:", &setup.imap_username, setup.current_field == CredentialField::ImapUsername));
+    field_lines.push(build_field_line("IMAP Server:", &setup.imap_server, setup.current_field == CredentialField::ImapServer, setup.mode));
+    field_lines.push(build_field_line("IMAP Port:", &setup.imap_port, setup.current_field == CredentialField::ImapPort, setup.mode));
+    field_lines.push(build_field_line("IMAP Username:", &setup.imap_username, setup.current_field == CredentialField::ImapUsername, setup.mode));
     field_lines.push(build_field_line("IMAP Password:", 
         if setup.show_passwords { &setup.imap_password } else { &imap_pwd_masked },
-        setup.current_field == CredentialField::ImapPassword));
+        setup.current_field == CredentialField::ImapPassword, setup.mode));
     field_lines.push(Line::from(""));
     
     // SMTP fields
     field_lines.push(Line::from(Span::styled("SMTP Configuration", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))));
-    field_lines.push(build_field_line("SMTP Server:", &setup.smtp_server, setup.current_field == CredentialField::SmtpServer));
-    field_lines.push(build_field_line("SMTP Port:", &setup.smtp_port, setup.current_field == CredentialField::SmtpPort));
-    field_lines.push(build_field_line("SMTP Username:", &setup.smtp_username, setup.current_field == CredentialField::SmtpUsername));
+    field_lines.push(build_field_line("SMTP Server:", &setup.smtp_server, setup.current_field == CredentialField::SmtpServer, setup.mode));
+    field_lines.push(build_field_line("SMTP Port:", &setup.smtp_port, setup.current_field == CredentialField::SmtpPort, setup.mode));
+    field_lines.push(build_field_line("SMTP Username:", &setup.smtp_username, setup.current_field == CredentialField::SmtpUsername, setup.mode));
     field_lines.push(build_field_line("SMTP Password:", 
         if setup.show_passwords { &setup.smtp_password } else { &smtp_pwd_masked },
-        setup.current_field == CredentialField::SmtpPassword));
+        setup.current_field == CredentialField::SmtpPassword, setup.mode));
     
     // Master password fields (only for encrypted file backend)
     if backend == StorageBackend::EncryptedFile {
@@ -625,29 +755,46 @@ fn render_credentials_setup(f: &mut Frame, area: Rect, app: &App) {
         field_lines.push(Line::from(Span::styled("Master Password (for encrypted file)", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))));
         field_lines.push(build_field_line("Master Password:", 
             if setup.show_passwords { &setup.master_password } else { &master_pwd_masked },
-            setup.current_field == CredentialField::MasterPassword));
+            setup.current_field == CredentialField::MasterPassword, setup.mode));
         field_lines.push(build_field_line("Confirm Password:", 
             if setup.show_passwords { &setup.master_password_confirm } else { &master_pwd_confirm_masked },
-            setup.current_field == CredentialField::MasterPasswordConfirm));
+            setup.current_field == CredentialField::MasterPasswordConfirm, setup.mode));
     }
 
     let fields_para = Paragraph::new(field_lines).wrap(Wrap { trim: false });
     f.render_widget(fields_para, chunks[1]);
 
-    // Render backend info
-    let backend_info = vec![
-        Line::from(""),
-        Line::from(Span::styled("Tip:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
-        Line::from(format!("  Press 'P' to toggle password visibility")),
-        Line::from(format!("  Press 'Enter' to save credentials")),
-    ];
+    // Render mode-specific tips
+    let backend_info = if setup.mode == crate::app::CredentialsMode::Normal {
+        vec![
+            Line::from(""),
+            Line::from(Span::styled("Tip:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
+            Line::from("  Press 'i' to enter Insert mode to edit fields"),
+            Line::from("  Press 'P' to toggle password visibility"),
+            Line::from("  Press 'h' on first field to go back to provider selection"),
+        ]
+    } else {
+        vec![
+            Line::from(""),
+            Line::from(Span::styled("Tip:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
+            Line::from("  Press 'Esc' to return to Normal mode"),
+            Line::from("  Type freely - all characters including 'j' and 'k' work"),
+            Line::from("  Use Left/Right arrows to move cursor within field"),
+        ]
+    };
     let info_para = Paragraph::new(backend_info).wrap(Wrap { trim: false });
     f.render_widget(info_para, chunks[2]);
 }
 
-fn build_field_line<'a>(label: &'a str, value: &'a str, is_active: bool) -> Line<'a> {
+fn build_field_line<'a>(label: &'a str, value: &'a str, is_active: bool, mode: crate::app::CredentialsMode) -> Line<'a> {
     let style = if is_active {
-        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+        if mode == crate::app::CredentialsMode::Insert {
+            // Insert mode - yellow and bold
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            // Normal mode - green and bold
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+        }
     } else {
         Style::default()
     };
@@ -782,7 +929,7 @@ fn render_credentials_management(f: &mut Frame, area: Rect, app: &App) {
 
     // Backend info
     let (backend, description) = app.get_backend_info()
-        .unwrap_or((StorageBackend::SystemKeyring, "Unknown".to_string()));
+        .unwrap_or((StorageBackend::EncryptedFile, "Unknown".to_string()));
     
     let backend_info = vec![
         Line::from(vec![

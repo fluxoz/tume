@@ -90,7 +90,24 @@ impl Config {
     pub fn load() -> Result<Self> {
         let config_path = Self::config_path()?;
         
+        let mut debug_log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/tume_debug.log")
+            .ok();
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "\n=== Config::load() called ===");
+            let _ = writeln!(log, "Config path: {:?}", config_path);
+            let _ = writeln!(log, "Config file exists: {}", config_path.exists());
+        }
+        
         if !config_path.exists() {
+            if let Some(ref mut log) = debug_log {
+                use std::io::Write;
+                let _ = writeln!(log, "Config file doesn't exist, generating skeleton");
+            }
             // Generate skeleton config file for user reference
             Self::generate_skeleton_config(&config_path)?;
             // Return default config
@@ -100,8 +117,18 @@ impl Config {
         let contents = fs::read_to_string(&config_path)
             .context("Failed to read config file")?;
         
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "Config file contents ({} bytes):\n{}", contents.len(), contents);
+        }
+        
         let config: Config = toml::from_str(&contents)
             .context("Failed to parse config file")?;
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "Parsed config with {} accounts", config.accounts.len());
+        }
         
         Ok(config)
     }
@@ -110,17 +137,48 @@ impl Config {
     pub fn save(&self) -> Result<()> {
         let config_path = Self::config_path()?;
         
+        let mut debug_log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/tume_debug.log")
+            .ok();
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "\n=== Config::save() called ===");
+            let _ = writeln!(log, "Config path: {:?}", config_path);
+            let _ = writeln!(log, "Accounts to save: {}", self.accounts.len());
+            for (key, acc) in &self.accounts {
+                let _ = writeln!(log, "  - {}: {} ({})", key, acc.name, acc.email);
+            }
+        }
+        
         // Ensure config directory exists
         if let Some(parent) = config_path.parent() {
             fs::create_dir_all(parent)
                 .context("Failed to create config directory")?;
+            if let Some(ref mut log) = debug_log {
+                use std::io::Write;
+                let _ = writeln!(log, "Created config directory: {:?}", parent);
+            }
         }
 
         let contents = toml::to_string_pretty(self)
             .context("Failed to serialize config")?;
         
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "Serialized config ({} bytes):\n{}", contents.len(), contents);
+        }
+        
         fs::write(&config_path, contents)
             .context("Failed to write config file")?;
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "Successfully wrote config file");
+            let _ = writeln!(log, "Config file exists after write: {}", config_path.exists());
+        }
         
         Ok(())
     }

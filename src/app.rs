@@ -1,5 +1,4 @@
 use crate::credentials::{Credentials, CredentialsManager, StorageBackend};
-use crate::db::{DbDraft, DbEmail, EmailDatabase, EmailStatus as DbEmailStatus};
 use crate::config::Config;
 use crate::db::{DbAccount, DbDraft, DbEmail, EmailDatabase, EmailStatus as DbEmailStatus};
 use std::collections::HashSet;
@@ -86,6 +85,13 @@ pub enum CredentialField {
     MasterPasswordConfirm,
 }
 
+/// Editing mode for credentials setup (similar to compose)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CredentialsMode {
+    Normal,
+    Insert,
+}
+
 /// State for credentials setup view
 #[derive(Debug, Clone)]
 pub struct CredentialsSetupState {
@@ -102,6 +108,10 @@ pub struct CredentialsSetupState {
     pub current_field: CredentialField,
     pub cursor_position: usize,
     pub show_passwords: bool,
+    pub selected_provider: Option<String>, // Provider ID if one was selected
+    pub provider_selection_mode: bool, // Whether we're in provider selection mode
+    pub provider_list_index: usize, // Selected index in provider list
+    pub mode: CredentialsMode, // Normal or Insert mode
 }
 
 impl CredentialsSetupState {
@@ -120,7 +130,29 @@ impl CredentialsSetupState {
             current_field: CredentialField::ImapServer,
             cursor_position: 0,
             show_passwords: false,
+            selected_provider: None,
+            provider_selection_mode: true, // Start in provider selection mode
+            provider_list_index: 0,
+            mode: CredentialsMode::Normal, // Start in normal mode
         }
+    }
+
+    /// Apply a provider preset to this setup state
+    pub fn apply_provider(&mut self, provider: &crate::providers::EmailProvider) {
+        self.selected_provider = Some(provider.id.to_string());
+        self.imap_server = provider.imap_server.to_string();
+        self.imap_port = provider.imap_port.to_string();
+        self.smtp_server = provider.smtp_server.to_string();
+        self.smtp_port = provider.smtp_port.to_string();
+        self.provider_selection_mode = false;
+    }
+
+    /// Check if user can navigate back to provider selection
+    /// Only allowed in Normal mode, on the first field
+    pub fn can_navigate_back_to_providers(&self) -> bool {
+        !self.provider_selection_mode 
+            && self.mode == CredentialsMode::Normal
+            && self.current_field == CredentialField::ImapServer
     }
 }
 
@@ -162,6 +194,7 @@ pub struct App {
     pub config: Config,
     pub accounts: Vec<DbAccount>,
     pub current_account_id: Option<i64>,
+    pub email_sync_manager: Option<crate::email_sync::EmailSyncManager>,
 }
 
 impl App {
@@ -186,6 +219,7 @@ impl App {
             config: Config::default(),
             accounts: Vec::new(),
             current_account_id: None,
+            email_sync_manager: None,
         }
     }
 
@@ -195,12 +229,43 @@ impl App {
 
         // Load configuration
         let config = Config::load().unwrap_or_else(|e| {
-            eprintln!("Warning: Failed to load config: {}. Using defaults.", e);
+            let mut debug_log = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("/tmp/tume_debug.log")
+                .ok();
+            if let Some(ref mut log) = debug_log {
+                use std::io::Write;
+                let _ = writeln!(log, "WARNING: Failed to load config: {}. Using defaults.", e);
+            }
             Config::default()
         });
+        
+        let mut debug_log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/tume_debug.log")
+            .ok();
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "\n=== App startup ===");
+            let _ = writeln!(log, "Config loaded. Accounts in config: {}", config.accounts.len());
+            for (key, account) in &config.accounts {
+                let _ = writeln!(log, "  Config account '{}': {} ({})", key, account.name, account.email);
+            }
+        }
 
         // Load accounts from database
         let accounts = db.get_accounts().await?;
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "Accounts from DB: {}", accounts.len());
+            for account in &accounts {
+                let _ = writeln!(log, "  DB account: {} ({})", account.name, account.email);
+            }
+        }
 
         // Sync accounts from config to database if needed
         let accounts = Self::sync_accounts_from_config(&db, &config, accounts).await?;
@@ -271,38 +336,51 @@ impl App {
         // Initialize credentials manager
         let credentials_manager = CredentialsManager::new();
         
-        // Determine initial view based on credentials state
+        // Check if we have a real mailbox configured (in config or database)
+        let has_configured_mailbox = !config.accounts.is_empty() || !accounts.is_empty();
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "has_configured_mailbox = {} (config.accounts={}, db.accounts={})", 
+                has_configured_mailbox, config.accounts.len(), accounts.len());
+            let _ = writeln!(log, "credentials_exist = {}", credentials_manager.credentials_exist());
+        }
+        
+        // Determine initial view based on credentials and mailbox configuration
         let (initial_view, credentials, credentials_setup_state, credentials_unlock_state) = 
-            if !credentials_manager.credentials_exist() {
-                // No credentials exist - show setup screen
+            if has_configured_mailbox && credentials_manager.credentials_exist() {
+                // Have mailbox and credentials - check if they need unlocking
+                if credentials_manager.backend() == StorageBackend::EncryptedFile {
+                    // Credentials exist but need to be unlocked
+                    (
+                        View::CredentialsUnlock,
+                        None,
+                        None,
+                        Some(CredentialsUnlockState::new()),
+                    )
+                } else {
+                    // Credentials exist in keyring - load them automatically
+                    match credentials_manager.load_credentials(None) {
+                        Ok(creds) => (View::InboxList, Some(creds), None, None),
+                        Err(_) => {
+                            // Failed to load - show setup to re-enter credentials
+                            (
+                                View::CredentialsSetup,
+                                None,
+                                Some(CredentialsSetupState::new(credentials_manager.backend())),
+                                None,
+                            )
+                        }
+                    }
+                }
+            } else {
+                // No configured mailbox or no credentials - show setup screen
                 (
                     View::CredentialsSetup,
                     None,
                     Some(CredentialsSetupState::new(credentials_manager.backend())),
                     None,
                 )
-            } else if credentials_manager.backend() == StorageBackend::EncryptedFile {
-                // Credentials exist but need to be unlocked
-                (
-                    View::CredentialsUnlock,
-                    None,
-                    None,
-                    Some(CredentialsUnlockState::new()),
-                )
-            } else {
-                // Credentials exist in keyring - load them automatically
-                match credentials_manager.load_credentials(None) {
-                    Ok(creds) => (View::InboxList, Some(creds), None, None),
-                    Err(_) => {
-                        // Failed to load - show setup screen
-                        (
-                            View::CredentialsSetup,
-                            None,
-                            Some(CredentialsSetupState::new(credentials_manager.backend())),
-                            None,
-                        )
-                    }
-                }
             };
 
         Ok(Self {
@@ -319,12 +397,13 @@ impl App {
             visual_selections: HashSet::new(),
             visual_anchor: None,
             credentials_manager: Some(credentials_manager),
-            credentials,
+            credentials: credentials.clone(),
             credentials_setup_state,
             credentials_unlock_state,
             config,
             accounts,
             current_account_id,
+            email_sync_manager: Some(crate::email_sync::EmailSyncManager::new(credentials)),
         })
     }
 
@@ -949,11 +1028,93 @@ impl App {
         self.should_quit = true;
     }
 
+    /// Attempt to sync emails (stub - shows not implemented message)
+    pub fn attempt_email_sync(&mut self) {
+        if let Some(ref sync_manager) = self.email_sync_manager {
+            if sync_manager.is_configured() {
+                self.status_message = Some(
+                    "Email sync not yet implemented. IMAP/SMTP integration coming soon. \
+                    Currently displaying mock data. See project issues for implementation status.".to_string()
+                );
+            } else {
+                self.status_message = Some(
+                    "No credentials configured. Please set up email credentials first.".to_string()
+                );
+            }
+        } else {
+            self.status_message = Some(
+                "Email sync not available. Please restart the app after configuring credentials.".to_string()
+            );
+        }
+    }
+
     pub fn get_selected_email(&self) -> Option<&Email> {
         self.emails.get(self.selected_index)
     }
 
     // ============ Credentials Management Methods ============
+
+    /// Navigate to next provider in selection list
+    pub fn credentials_setup_next_provider(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            if setup.provider_selection_mode {
+                let providers = crate::providers::EmailProvider::all();
+                setup.provider_list_index = (setup.provider_list_index + 1) % providers.len();
+            }
+        }
+    }
+
+    /// Navigate to previous provider in selection list
+    pub fn credentials_setup_prev_provider(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            if setup.provider_selection_mode {
+                let providers = crate::providers::EmailProvider::all();
+                setup.provider_list_index = if setup.provider_list_index == 0 {
+                    providers.len() - 1
+                } else {
+                    setup.provider_list_index - 1
+                };
+            }
+        }
+    }
+
+    /// Select the currently highlighted provider and move to field entry
+    pub fn credentials_setup_select_provider(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            if setup.provider_selection_mode {
+                let providers = crate::providers::EmailProvider::all();
+                if let Some(provider) = providers.get(setup.provider_list_index) {
+                    setup.apply_provider(provider);
+                }
+            }
+        }
+    }
+
+    /// Go back to provider selection from field entry
+    pub fn credentials_setup_back_to_providers(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            if !setup.provider_selection_mode {
+                setup.provider_selection_mode = true;
+                setup.selected_provider = None;
+            }
+        }
+    }
+
+    /// Enter insert mode for editing credentials fields
+    pub fn credentials_setup_enter_insert_mode(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            if !setup.provider_selection_mode {
+                setup.mode = CredentialsMode::Insert;
+            }
+        }
+    }
+
+    /// Exit insert mode and return to normal mode
+    pub fn credentials_setup_exit_insert_mode(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            setup.mode = CredentialsMode::Normal;
+        }
+    }
 
     /// Navigate to next field in credentials setup
     pub fn credentials_setup_next_field(&mut self) {
@@ -1133,11 +1294,6 @@ impl App {
             None => return,
         };
 
-        let manager = match &self.credentials_manager {
-            Some(m) => m,
-            None => return,
-        };
-
         // Validate fields
         if setup.imap_server.is_empty() || setup.imap_username.is_empty() 
             || setup.smtp_server.is_empty() || setup.smtp_username.is_empty() {
@@ -1162,12 +1318,17 @@ impl App {
             }
         };
 
-        // For encrypted file backend, validate master password
-        let master_password = if manager.backend() == StorageBackend::EncryptedFile {
-            if setup.master_password.is_empty() {
-                self.status_message = Some("Master password is required".to_string());
-                return;
-            }
+        // Get backend from credentials manager (if available)
+        let current_backend = self.credentials_manager
+            .as_ref()
+            .map(|m| m.backend())
+            .unwrap_or(StorageBackend::EncryptedFile);
+
+        // For encrypted file backend, validate master password (always true now)
+        let master_password = if setup.master_password.is_empty() {
+            // Use default password if none provided
+            None
+        } else {
             if setup.master_password != setup.master_password_confirm {
                 self.status_message = Some("Master passwords do not match".to_string());
                 return;
@@ -1177,8 +1338,6 @@ impl App {
                 return;
             }
             Some(setup.master_password.as_str())
-        } else {
-            None
         };
 
         // Create credentials object
@@ -1193,16 +1352,111 @@ impl App {
             smtp_password: setup.smtp_password.clone(),
         };
 
-        // Save credentials
-        match manager.save_credentials(&credentials, master_password) {
+        // Debug log before save
+        let mut debug_log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/tume_debug.log")
+            .ok();
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "\n=== About to call save_credentials_with_fallback() ===");
+            let _ = writeln!(log, "Backend: EncryptedFile (only option)");
+            let _ = writeln!(log, "IMAP server: {}", credentials.imap_server);
+            let _ = writeln!(log, "IMAP username: {}", credentials.imap_username);
+            let _ = writeln!(log, "Master password: {:?}", master_password.is_some());
+        }
+
+        // Save credentials to encrypted file
+        let manager = match &mut self.credentials_manager {
+            Some(m) => m,
+            None => return,
+        };
+
+        match manager.save_credentials_with_fallback(&credentials, master_password) {
             Ok(_) => {
-                self.credentials = Some(credentials);
+                self.credentials = Some(credentials.clone());
+                
+                // Save account configuration to config file
+                // Use selected provider or fallback to "custom"
+                let provider_id = setup.selected_provider.as_ref()
+                    .map(|s| s.clone())
+                    .unwrap_or_else(|| "custom".to_string());
+                    
+                let provider_name = crate::providers::EmailProvider::by_id(&provider_id)
+                    .map(|p| p.name)
+                    .unwrap_or("Custom");
+                
+                // Create account entry
+                let account = crate::config::Account {
+                    name: format!("{} Account", provider_name),
+                    email: setup.imap_username.clone(),
+                    provider: provider_id.clone(),
+                    default: true, // First account is default
+                    color: Some("blue".to_string()),
+                    display_order: Some(1),
+                };
+                
+                // Add to config and save
+                let account_key = provider_id.replace(" ", "_").to_lowercase();
+                self.config.accounts.insert(account_key, account.clone());
+                
+                // Try to save config - if it fails, still continue but show error
+                let config_saved = match self.config.save() {
+                    Ok(_) => {
+                        let mut debug_log = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open("/tmp/tume_debug.log")
+                            .ok();
+                        if let Some(ref mut log) = debug_log {
+                            use std::io::Write;
+                            let _ = writeln!(log, "DEBUG: Config saved successfully to {:?}", crate::config::Config::config_path());
+                        }
+                        true
+                    },
+                    Err(e) => {
+                        let mut debug_log = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open("/tmp/tume_debug.log")
+                            .ok();
+                        if let Some(ref mut log) = debug_log {
+                            use std::io::Write;
+                            let _ = writeln!(log, "ERROR: Failed to save config file: {}", e);
+                        }
+                        self.status_message = Some(format!("ERROR: Failed to save config file: {}. Account will be lost on restart!", e));
+                        false
+                    }
+                };
+                
+                // Always try to add to in-memory accounts list
+                let db_account = crate::db::DbAccount {
+                    id: 0,
+                    name: account.name.clone(),
+                    email: account.email.clone(),
+                    provider: account.provider.clone(),
+                    is_default: account.default,
+                    color: account.color.clone(),
+                    display_order: account.display_order.unwrap_or(999),
+                };
+                self.accounts.push(db_account.clone());
+                self.current_account_id = Some(db_account.id);
+                
+                if config_saved {
+                    self.status_message = Some(format!(
+                        "Credentials and account configuration saved successfully using {}. Email sync not yet implemented - using mock data.",
+                        manager.backend().as_str()
+                    ));
+                } else {
+                    // Error message already set above
+                }
+                
                 self.credentials_setup_state = None;
                 self.current_view = View::InboxList;
-                self.status_message = Some(format!(
-                    "Credentials saved successfully using {}",
-                    manager.backend().as_str()
-                ));
+                
+                // Initialize email sync manager with credentials
+                self.email_sync_manager = Some(crate::email_sync::EmailSyncManager::new(Some(credentials)));
             }
             Err(e) => {
                 self.status_message = Some(format!("Failed to save credentials: {}", e));
@@ -1759,6 +2013,7 @@ mod tests {
             config: Config::default(),
             accounts: Vec::new(),
             current_account_id: None,
+            email_sync_manager: None,
         };
 
         // Enter compose mode and add some content
@@ -1833,6 +2088,7 @@ mod tests {
             config: Config::default(),
             accounts: Vec::new(),
             current_account_id: None,
+            email_sync_manager: None,
         };
 
         // Enter compose mode and add some content

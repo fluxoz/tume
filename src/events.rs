@@ -71,6 +71,9 @@ fn handle_inbox_keys(app: &mut App, key: KeyEvent) {
         KeyCode::Char('c') => app.perform_action(Action::Compose),
         KeyCode::Char('f') => app.perform_action(Action::Forward),
 
+        // Sync emails (stub)
+        KeyCode::Char('s') => app.attempt_email_sync(),
+
         // Credentials management
         KeyCode::Char('m') => app.enter_credentials_management(),
 
@@ -176,13 +179,80 @@ fn handle_compose_insert_keys(app: &mut App, key: KeyEvent) {
 }
 
 fn handle_credentials_setup_keys(app: &mut App, key: KeyEvent) {
+    // Check if we're in provider selection mode
+    let in_provider_selection = app.credentials_setup_state
+        .as_ref()
+        .map(|s| s.provider_selection_mode)
+        .unwrap_or(false);
+
+    if in_provider_selection {
+        // Provider selection mode keys
+        match key.code {
+            // Navigation
+            KeyCode::Char('j') | KeyCode::Down => {
+                app.credentials_setup_next_provider();
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                app.credentials_setup_prev_provider();
+            }
+
+            // Select provider
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+                app.credentials_setup_select_provider();
+            }
+
+            // Cancel
+            KeyCode::Esc | KeyCode::Char('q') => {
+                app.credentials_setup_cancel();
+            }
+
+            _ => {}
+        }
+    } else {
+        // Field entry mode - check Normal vs Insert
+        let in_insert_mode = app.credentials_setup_state
+            .as_ref()
+            .map(|s| s.mode == crate::app::CredentialsMode::Insert)
+            .unwrap_or(false);
+
+        if in_insert_mode {
+            handle_credentials_setup_insert_keys(app, key);
+        } else {
+            handle_credentials_setup_normal_keys(app, key);
+        }
+    }
+}
+
+fn handle_credentials_setup_normal_keys(app: &mut App, key: KeyEvent) {
     match key.code {
+        // Enter insert mode
+        KeyCode::Char('i') => {
+            app.credentials_setup_enter_insert_mode();
+        }
+
         // Navigation
-        KeyCode::Tab | KeyCode::Char('j') | KeyCode::Down => {
+        KeyCode::Char('j') | KeyCode::Down => {
             app.credentials_setup_next_field();
         }
-        KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => {
+        KeyCode::Char('k') | KeyCode::Up => {
             app.credentials_setup_prev_field();
+        }
+        KeyCode::Tab => {
+            app.credentials_setup_next_field();
+        }
+        KeyCode::BackTab => {
+            app.credentials_setup_prev_field();
+        }
+
+        // Back to provider selection
+        KeyCode::Char('h') | KeyCode::Left => {
+            if app.credentials_setup_state
+                .as_ref()
+                .map(|s| s.can_navigate_back_to_providers())
+                .unwrap_or(false) 
+            {
+                app.credentials_setup_back_to_providers();
+            }
         }
 
         // Toggle password visibility
@@ -196,8 +266,19 @@ fn handle_credentials_setup_keys(app: &mut App, key: KeyEvent) {
         }
 
         // Cancel
-        KeyCode::Esc => {
+        KeyCode::Esc | KeyCode::Char('q') => {
             app.credentials_setup_cancel();
+        }
+
+        _ => {}
+    }
+}
+
+fn handle_credentials_setup_insert_keys(app: &mut App, key: KeyEvent) {
+    match key.code {
+        // Exit insert mode
+        KeyCode::Esc => {
+            app.credentials_setup_exit_insert_mode();
         }
 
         // Text input
