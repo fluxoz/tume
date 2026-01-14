@@ -577,6 +577,7 @@ The application is structured into several modules:
 - ✅ First-time setup wizard
 - ✅ Multi-account support with configuration
 - ✅ Account switching (1-9, [, ], Tab)
+- ✅ Inbox rules engine for automatic email filtering and organization
 - ✅ GPG and Yubikey hooks (stubs for future encryption/signing)
 
 ### Placeholder Features
@@ -585,17 +586,22 @@ The application is structured into several modules:
 - Actual sending of composed emails
 
 ### Future Development
+See [IMPLEMENTATION.md](IMPLEMENTATION.md) for detailed implementation roadmap.
+
 - Account picker UI (M key)
 - Account onboarding wizard (A key)
 - Unified inbox view across all accounts
-- Actual email protocol integration (IMAP/SMTP)
+- **Actual email protocol integration (IMAP/SMTP)** - See IMPLEMENTATION.md
 - Send composed emails via SMTP
 - Reply and forward with pre-filled fields
+- Folder management (create, delete, rename)
+- Email search (local and server-side)
+- Attachments (download and send)
+- OAuth2 support for Gmail/Outlook
 - GPG encryption implementation
 - Yubikey signing implementation
 - Email threading
-- Search functionality
-- Filtering and sorting
+- Push notifications (IMAP IDLE)
 
 ## License
 
