@@ -579,7 +579,7 @@ fn render_provider_selection(f: &mut Frame, area: Rect, app: &App) {
     let backend = app.credentials_manager
         .as_ref()
         .map(|m| m.backend())
-        .unwrap_or(crate::credentials::StorageBackend::SystemKeyring);
+        .unwrap_or(StorageBackend::SystemKeyring);
 
     // Title
     let title = " Email Provider Setup ";
@@ -764,6 +764,7 @@ fn render_credentials_fields(f: &mut Frame, area: Rect, app: &App) {
         Line::from(Span::styled("Tip:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
         Line::from("  Press 'P' to toggle password visibility"),
         Line::from("  Press 'h' on first field to go back to provider selection"),
+        Line::from("  Press 'Enter' to save credentials"),
     ];
     let info_para = Paragraph::new(backend_info).wrap(Wrap { trim: false });
     f.render_widget(info_para, chunks[2]);
