@@ -83,7 +83,12 @@ pub fn draw(f: &mut Frame, app: &App) {
 
 fn render_header(f: &mut Frame, area: Rect, app: &App) {
     // Build header text with account info if available
-    let header_text = if let Some(account_name) = app.get_current_account_name() {
+    // Don't show account name during credentials setup/unlock
+    let header_text = if app.current_view == View::CredentialsSetup 
+        || app.current_view == View::CredentialsUnlock 
+        || app.current_view == View::CredentialsManagement {
+        "TUME - Terminal Email Client".to_string()
+    } else if let Some(account_name) = app.get_current_account_name() {
         format!("TUME - Terminal Email Client [{}]", account_name)
     } else {
         "TUME - Terminal Email Client".to_string()
