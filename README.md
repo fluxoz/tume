@@ -93,19 +93,30 @@ When first setting up credentials, you'll see a provider selection screen:
 
 ### Credentials Field Entry View
 
-After selecting a provider, you'll enter your credentials:
+After selecting a provider, you'll enter credentials using **vim-style Normal/Insert modes**:
 
+**Normal Mode** (green highlight):
 | Key | Action |
 |-----|--------|
-| `Tab`, `j`, `↓` | Navigate to next field |
-| `Shift+Tab`, `k`, `↑` | Navigate to previous field |
-| Type | Enter text in current field |
-| `Backspace` | Delete character |
-| `Left` / `Right` | Move cursor |
-| `h` | Go back to provider selection (when on first field) |
+| `i` | Enter Insert mode to edit current field |
+| `j`, `↓` | Navigate to next field |
+| `k`, `↑` | Navigate to previous field |
+| `Tab` | Navigate to next field |
+| `Shift+Tab` | Navigate to previous field |
+| `h`, `←` | Go back to provider selection (when on first field) |
 | `P` | Toggle password visibility |
 | `Enter` | Save credentials |
-| `Esc` | Cancel setup (quit if first-time) |
+| `Esc`, `q` | Cancel setup |
+
+**Insert Mode** (yellow highlight):
+| Key | Action |
+|-----|--------|
+| Type | Enter text in current field (including `j` and `k` characters) |
+| `Backspace` | Delete character |
+| `Left` / `Right` | Move cursor |
+| `Esc` | Exit Insert mode and return to Normal mode |
+
+This prevents the issue where navigation keys like `j`/`k` would trigger field navigation while trying to type those characters.
 
 ### Unlocking Credentials
 
