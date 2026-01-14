@@ -219,10 +219,7 @@ fn handle_credentials_setup_keys(app: &mut App, key: KeyEvent) {
             // Back to provider selection
             KeyCode::Char('h') | KeyCode::Left if app.credentials_setup_state
                 .as_ref()
-                .map(|s| {
-                    // Only go back if we're at the first field and cursor is at position 0
-                    s.current_field == crate::app::CredentialField::ImapServer && s.cursor_position == 0
-                })
+                .map(|s| s.can_navigate_back_to_providers())
                 .unwrap_or(false) => 
             {
                 app.credentials_setup_back_to_providers();

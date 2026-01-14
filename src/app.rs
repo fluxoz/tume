@@ -137,6 +137,14 @@ impl CredentialsSetupState {
         self.smtp_port = provider.smtp_port.to_string();
         self.provider_selection_mode = false;
     }
+
+    /// Check if user can navigate back to provider selection
+    /// Only allowed when on the first field and cursor is at position 0
+    pub fn can_navigate_back_to_providers(&self) -> bool {
+        !self.provider_selection_mode 
+            && self.current_field == CredentialField::ImapServer 
+            && self.cursor_position == 0
+    }
 }
 
 /// State for credentials unlock view (for encrypted file backend)
