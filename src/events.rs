@@ -176,49 +176,93 @@ fn handle_compose_insert_keys(app: &mut App, key: KeyEvent) {
 }
 
 fn handle_credentials_setup_keys(app: &mut App, key: KeyEvent) {
-    match key.code {
-        // Navigation
-        KeyCode::Tab | KeyCode::Char('j') | KeyCode::Down => {
-            app.credentials_setup_next_field();
-        }
-        KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => {
-            app.credentials_setup_prev_field();
-        }
+    // Check if we're in provider selection mode
+    let in_provider_selection = app.credentials_setup_state
+        .as_ref()
+        .map(|s| s.provider_selection_mode)
+        .unwrap_or(false);
 
-        // Toggle password visibility
-        KeyCode::Char('P') => {
-            app.credentials_setup_toggle_password_visibility();
-        }
+    if in_provider_selection {
+        // Provider selection mode keys
+        match key.code {
+            // Navigation
+            KeyCode::Char('j') | KeyCode::Down => {
+                app.credentials_setup_next_provider();
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                app.credentials_setup_prev_provider();
+            }
 
-        // Save
-        KeyCode::Enter => {
-            app.credentials_setup_save();
-        }
+            // Select provider
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+                app.credentials_setup_select_provider();
+            }
 
-        // Cancel
-        KeyCode::Esc => {
-            app.credentials_setup_cancel();
-        }
+            // Cancel
+            KeyCode::Esc | KeyCode::Char('q') => {
+                app.credentials_setup_cancel();
+            }
 
-        // Text input
-        KeyCode::Char(c) => {
-            app.credentials_setup_insert_char(c);
+            _ => {}
         }
+    } else {
+        // Field entry mode keys
+        match key.code {
+            // Navigation
+            KeyCode::Tab | KeyCode::Char('j') | KeyCode::Down => {
+                app.credentials_setup_next_field();
+            }
+            KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => {
+                app.credentials_setup_prev_field();
+            }
 
-        // Backspace
-        KeyCode::Backspace => {
-            app.credentials_setup_delete_char();
-        }
+            // Back to provider selection
+            KeyCode::Char('h') | KeyCode::Left if app.credentials_setup_state
+                .as_ref()
+                .map(|s| {
+                    // Only go back if we're at the first field and cursor is at position 0
+                    s.current_field == crate::app::CredentialField::ImapServer && s.cursor_position == 0
+                })
+                .unwrap_or(false) => 
+            {
+                app.credentials_setup_back_to_providers();
+            }
 
-        // Cursor movement
-        KeyCode::Left => {
-            app.credentials_setup_cursor_left();
-        }
-        KeyCode::Right => {
-            app.credentials_setup_cursor_right();
-        }
+            // Toggle password visibility
+            KeyCode::Char('P') => {
+                app.credentials_setup_toggle_password_visibility();
+            }
 
-        _ => {}
+            // Save
+            KeyCode::Enter => {
+                app.credentials_setup_save();
+            }
+
+            // Cancel
+            KeyCode::Esc => {
+                app.credentials_setup_cancel();
+            }
+
+            // Text input
+            KeyCode::Char(c) => {
+                app.credentials_setup_insert_char(c);
+            }
+
+            // Backspace
+            KeyCode::Backspace => {
+                app.credentials_setup_delete_char();
+            }
+
+            // Cursor movement
+            KeyCode::Left => {
+                app.credentials_setup_cursor_left();
+            }
+            KeyCode::Right => {
+                app.credentials_setup_cursor_right();
+            }
+
+            _ => {}
+        }
     }
 }
 

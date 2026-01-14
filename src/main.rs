@@ -3,6 +3,7 @@ mod credentials;
 mod config;
 mod db;
 mod events;
+mod providers;
 mod ui;
 
 use anyhow::Result;

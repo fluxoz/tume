@@ -310,7 +310,15 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
             }
         }
         View::CredentialsSetup => {
-            "Tab/j/k: Navigate fields | Type to edit | P: Toggle password visibility | Enter: Save | Esc: Cancel"
+            if let Some(setup) = &app.credentials_setup_state {
+                if setup.provider_selection_mode {
+                    "j/k: Navigate | Enter/l: Select provider | Esc/q: Cancel"
+                } else {
+                    "Tab/j/k: Navigate fields | Type to edit | P: Toggle password visibility | h: Back to providers | Enter: Save | Esc: Cancel"
+                }
+            } else {
+                "Tab/j/k: Navigate fields | Type to edit | P: Toggle password visibility | Enter: Save | Esc: Cancel"
+            }
         }
         View::CredentialsUnlock => {
             "Type master password | Enter: Unlock | Esc: Quit"
@@ -554,13 +562,129 @@ fn render_credentials_setup(f: &mut Frame, area: Rect, app: &App) {
         None => return,
     };
 
+    // Check if we're in provider selection mode
+    if setup.provider_selection_mode {
+        render_provider_selection(f, area, app);
+    } else {
+        render_credentials_fields(f, area, app);
+    }
+}
+
+fn render_provider_selection(f: &mut Frame, area: Rect, app: &App) {
+    let setup = match &app.credentials_setup_state {
+        Some(s) => s,
+        None => return,
+    };
+
     let backend = app.credentials_manager
         .as_ref()
         .map(|m| m.backend())
-        .unwrap_or(StorageBackend::SystemKeyring);
+        .unwrap_or(crate::credentials::StorageBackend::SystemKeyring);
 
-    // Title with backend info
-    let title = format!(" Credentials Setup - {} ", backend.as_str());
+    // Title
+    let title = " Email Provider Setup ";
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .style(Style::default().fg(Color::Cyan));
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Split into sections: instructions and provider list
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5),  // Instructions
+            Constraint::Min(10),    // Provider list
+            Constraint::Length(3),  // Footer help
+        ])
+        .split(inner);
+
+    // Render instructions
+    let instructions = vec![
+        Line::from(Span::styled(
+            "Select your email provider",
+            Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+        )),
+        Line::from(""),
+        Line::from(format!("Credentials will be stored using: {}", backend.as_str())),
+    ];
+    let instructions_para = Paragraph::new(instructions).wrap(Wrap { trim: false });
+    f.render_widget(instructions_para, chunks[0]);
+
+    // Render provider list
+    let providers = crate::providers::EmailProvider::all();
+    let items: Vec<ListItem> = providers
+        .iter()
+        .enumerate()
+        .map(|(i, provider)| {
+            let style = if i == setup.provider_list_index {
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+
+            let marker = if i == setup.provider_list_index {
+                "▸ "
+            } else {
+                "  "
+            };
+
+            let content = vec![
+                Line::from(vec![
+                    Span::styled(marker, style),
+                    Span::styled(provider.name, style),
+                ]),
+                Line::from(vec![
+                    Span::raw("    "),
+                    Span::styled(provider.description, Style::default().fg(Color::DarkGray)),
+                ]),
+            ];
+
+            ListItem::new(content).style(Style::default())
+        })
+        .collect();
+
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Available Providers"),
+    );
+    f.render_widget(list, chunks[1]);
+
+    // Help text
+    let help = vec![
+        Line::from(Span::raw("j/k: Navigate | Enter: Select provider | Esc/q: Cancel")),
+    ];
+    let help_para = Paragraph::new(help)
+        .style(Style::default().fg(Color::Gray))
+        .alignment(Alignment::Center);
+    f.render_widget(help_para, chunks[2]);
+}
+
+fn render_credentials_fields(f: &mut Frame, area: Rect, app: &App) {
+    let setup = match &app.credentials_setup_state {
+        Some(s) => s,
+        None => return,
+    };
+
+    let backend = app.credentials_manager
+        .as_ref()
+        .map(|m| m.backend())
+        .unwrap_or(crate::credentials::StorageBackend::SystemKeyring);
+
+    // Get selected provider name for title
+    let provider_name = setup.selected_provider
+        .as_ref()
+        .and_then(|id| crate::providers::EmailProvider::by_id(id))
+        .map(|p| p.name)
+        .unwrap_or("Custom");
+
+    // Title with backend and provider info
+    let title = format!(" {} - Credentials Setup ", provider_name);
     let block = Block::default()
         .borders(Borders::ALL)
         .title(title)
@@ -586,7 +710,7 @@ fn render_credentials_setup(f: &mut Frame, area: Rect, app: &App) {
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from(backend.description()),
+        Line::from(format!("Storage: {}", backend.description())),
     ];
     let instructions_para = Paragraph::new(instructions).wrap(Wrap { trim: false });
     f.render_widget(instructions_para, chunks[0]);
@@ -638,8 +762,8 @@ fn render_credentials_setup(f: &mut Frame, area: Rect, app: &App) {
     let backend_info = vec![
         Line::from(""),
         Line::from(Span::styled("Tip:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
-        Line::from(format!("  Press 'P' to toggle password visibility")),
-        Line::from(format!("  Press 'Enter' to save credentials")),
+        Line::from("  Press 'P' to toggle password visibility"),
+        Line::from("  Press 'h' on first field to go back to provider selection"),
     ];
     let info_para = Paragraph::new(backend_info).wrap(Wrap { trim: false });
     f.render_widget(info_para, chunks[2]);
