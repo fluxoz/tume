@@ -217,6 +217,81 @@ impl CredentialsManager {
         }
     }
 
+    /// Save credentials using the current backend (with automatic fallback)
+    pub fn save_credentials_with_fallback(&mut self, credentials: &Credentials, master_password: Option<&str>) -> Result<()> {
+        let mut debug_log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/tume_debug.log")
+            .ok();
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            let _ = writeln!(log, "\n=== save_credentials_with_fallback() called ===");
+            let _ = writeln!(log, "Backend: {:?}", self.backend);
+            let _ = writeln!(log, "File path: {:?}", self.file_path);
+            let _ = writeln!(log, "Master password provided: {}", master_password.is_some());
+        }
+        
+        // Try to save with current backend
+        let result = match self.backend {
+            StorageBackend::SystemKeyring => {
+                // Try saving to keyring
+                let save_result = self.save_to_keyring(credentials);
+                
+                if save_result.is_ok() {
+                    // Verify we can actually retrieve it
+                    if let Some(ref mut log) = debug_log {
+                        use std::io::Write;
+                        let _ = writeln!(log, "Keyring save succeeded, verifying persistence...");
+                    }
+                    
+                    // Sleep briefly to ensure keyring has time to persist
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    
+                    if !self.keyring_credentials_exist() {
+                        if let Some(ref mut log) = debug_log {
+                            use std::io::Write;
+                            let _ = writeln!(log, "WARNING: Keyring save succeeded but credentials not retrievable!");
+                            let _ = writeln!(log, "Falling back to EncryptedFile backend...");
+                        }
+                        
+                        // Keyring is unreliable, switch to encrypted file
+                        self.backend = StorageBackend::EncryptedFile;
+                        
+                        // Generate a default master password if none provided
+                        let fallback_password = master_password.unwrap_or("tume-default-password");
+                        self.save_to_encrypted_file(credentials, fallback_password)
+                    } else {
+                        save_result
+                    }
+                } else {
+                    save_result
+                }
+            },
+            StorageBackend::EncryptedFile => {
+                let password = master_password
+                    .unwrap_or("tume-default-password"); // Use default if none provided
+                self.save_to_encrypted_file(credentials, password)
+            }
+        };
+        
+        if let Some(ref mut log) = debug_log {
+            use std::io::Write;
+            match &result {
+                Ok(_) => {
+                    let _ = writeln!(log, "Credentials saved successfully with backend: {:?}", self.backend);
+                    let _ = writeln!(log, "File exists after save: {}", self.file_path.exists());
+                },
+                Err(e) => {
+                    let _ = writeln!(log, "Failed to save credentials: {}", e);
+                }
+            }
+        }
+        
+        result
+    }
+
     /// Save credentials using the current backend
     pub fn save_credentials(&self, credentials: &Credentials, master_password: Option<&str>) -> Result<()> {
         let mut debug_log = std::fs::OpenOptions::new()

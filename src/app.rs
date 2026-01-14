@@ -1294,11 +1294,6 @@ impl App {
             None => return,
         };
 
-        let manager = match &self.credentials_manager {
-            Some(m) => m,
-            None => return,
-        };
-
         // Validate fields
         if setup.imap_server.is_empty() || setup.imap_username.is_empty() 
             || setup.smtp_server.is_empty() || setup.smtp_username.is_empty() {
@@ -1323,8 +1318,14 @@ impl App {
             }
         };
 
+        // Get backend from credentials manager (if available)
+        let current_backend = self.credentials_manager
+            .as_ref()
+            .map(|m| m.backend())
+            .unwrap_or(StorageBackend::SystemKeyring);
+
         // For encrypted file backend, validate master password
-        let master_password = if manager.backend() == StorageBackend::EncryptedFile {
+        let master_password = if current_backend == StorageBackend::EncryptedFile {
             if setup.master_password.is_empty() {
                 self.status_message = Some("Master password is required".to_string());
                 return;
@@ -1362,15 +1363,20 @@ impl App {
             .ok();
         if let Some(ref mut log) = debug_log {
             use std::io::Write;
-            let _ = writeln!(log, "\n=== About to call save_credentials() ===");
-            let _ = writeln!(log, "Backend: {:?}", manager.backend());
+            let _ = writeln!(log, "\n=== About to call save_credentials_with_fallback() ===");
+            let _ = writeln!(log, "Backend: {:?}", current_backend);
             let _ = writeln!(log, "IMAP server: {}", credentials.imap_server);
             let _ = writeln!(log, "IMAP username: {}", credentials.imap_username);
             let _ = writeln!(log, "Master password: {:?}", master_password.is_some());
         }
 
-        // Save credentials
-        match manager.save_credentials(&credentials, master_password) {
+        // Save credentials with automatic fallback
+        let manager = match &mut self.credentials_manager {
+            Some(m) => m,
+            None => return,
+        };
+
+        match manager.save_credentials_with_fallback(&credentials, master_password) {
             Ok(_) => {
                 self.credentials = Some(credentials.clone());
                 
