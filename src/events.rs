@@ -22,6 +22,9 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
         View::InboxList => handle_inbox_keys(app, key),
         View::EmailDetail => handle_detail_keys(app, key),
         View::Compose => handle_compose_keys(app, key),
+        View::CredentialsSetup => handle_credentials_setup_keys(app, key),
+        View::CredentialsUnlock => handle_credentials_unlock_keys(app, key),
+        View::CredentialsManagement => handle_credentials_management_keys(app, key),
     }
 }
 
@@ -67,6 +70,9 @@ fn handle_inbox_keys(app: &mut App, key: KeyEvent) {
         KeyCode::Char('r') => app.perform_action(Action::Reply),
         KeyCode::Char('c') => app.perform_action(Action::Compose),
         KeyCode::Char('f') => app.perform_action(Action::Forward),
+
+        // Credentials management
+        KeyCode::Char('m') => app.enter_credentials_management(),
 
         // Quit
         KeyCode::Char('q') => app.quit(),
@@ -164,6 +170,103 @@ fn handle_compose_insert_keys(app: &mut App, key: KeyEvent) {
         // Cursor movement
         KeyCode::Left => app.compose_move_cursor_left(),
         KeyCode::Right => app.compose_move_cursor_right(),
+
+        _ => {}
+    }
+}
+
+fn handle_credentials_setup_keys(app: &mut App, key: KeyEvent) {
+    match key.code {
+        // Navigation
+        KeyCode::Tab | KeyCode::Char('j') | KeyCode::Down => {
+            app.credentials_setup_next_field();
+        }
+        KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => {
+            app.credentials_setup_prev_field();
+        }
+
+        // Toggle password visibility
+        KeyCode::Char('P') => {
+            app.credentials_setup_toggle_password_visibility();
+        }
+
+        // Save
+        KeyCode::Enter => {
+            app.credentials_setup_save();
+        }
+
+        // Cancel
+        KeyCode::Esc => {
+            app.credentials_setup_cancel();
+        }
+
+        // Text input
+        KeyCode::Char(c) => {
+            app.credentials_setup_insert_char(c);
+        }
+
+        // Backspace
+        KeyCode::Backspace => {
+            app.credentials_setup_delete_char();
+        }
+
+        // Cursor movement
+        KeyCode::Left => {
+            app.credentials_setup_cursor_left();
+        }
+        KeyCode::Right => {
+            app.credentials_setup_cursor_right();
+        }
+
+        _ => {}
+    }
+}
+
+fn handle_credentials_unlock_keys(app: &mut App, key: KeyEvent) {
+    match key.code {
+        // Submit
+        KeyCode::Enter => {
+            app.credentials_unlock_submit();
+        }
+
+        // Cancel (quit)
+        KeyCode::Esc => {
+            app.credentials_unlock_cancel();
+        }
+
+        // Text input
+        KeyCode::Char(c) => {
+            app.credentials_unlock_insert_char(c);
+        }
+
+        // Backspace
+        KeyCode::Backspace => {
+            app.credentials_unlock_delete_char();
+        }
+
+        // Cursor movement
+        KeyCode::Left => {
+            app.credentials_unlock_cursor_left();
+        }
+        KeyCode::Right => {
+            app.credentials_unlock_cursor_right();
+        }
+
+        _ => {}
+    }
+}
+
+fn handle_credentials_management_keys(app: &mut App, key: KeyEvent) {
+    match key.code {
+        // Reset credentials
+        KeyCode::Char('r') => {
+            app.credentials_reset();
+        }
+
+        // Go back
+        KeyCode::Esc => {
+            app.exit_credentials_management();
+        }
 
         _ => {}
     }

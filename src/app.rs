@@ -1,3 +1,5 @@
+use crate::credentials::{Credentials, CredentialsManager, StorageBackend};
+use crate::db::{DbDraft, DbEmail, EmailDatabase, EmailStatus as DbEmailStatus};
 use crate::config::Config;
 use crate::db::{DbAccount, DbDraft, DbEmail, EmailDatabase, EmailStatus as DbEmailStatus};
 use std::collections::HashSet;
@@ -18,6 +20,9 @@ pub enum View {
     InboxList,
     EmailDetail,
     Compose,
+    CredentialsSetup,
+    CredentialsUnlock,
+    CredentialsManagement,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -66,6 +71,77 @@ impl fmt::Display for Action {
     }
 }
 
+/// Field being edited in credentials setup
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CredentialField {
+    ImapServer,
+    ImapPort,
+    ImapUsername,
+    ImapPassword,
+    SmtpServer,
+    SmtpPort,
+    SmtpUsername,
+    SmtpPassword,
+    MasterPassword,
+    MasterPasswordConfirm,
+}
+
+/// State for credentials setup view
+#[derive(Debug, Clone)]
+pub struct CredentialsSetupState {
+    pub imap_server: String,
+    pub imap_port: String,
+    pub imap_username: String,
+    pub imap_password: String,
+    pub smtp_server: String,
+    pub smtp_port: String,
+    pub smtp_username: String,
+    pub smtp_password: String,
+    pub master_password: String,
+    pub master_password_confirm: String,
+    pub current_field: CredentialField,
+    pub cursor_position: usize,
+    pub show_passwords: bool,
+}
+
+impl CredentialsSetupState {
+    pub fn new(_backend: StorageBackend) -> Self {
+        Self {
+            imap_server: String::new(),
+            imap_port: "993".to_string(),
+            imap_username: String::new(),
+            imap_password: String::new(),
+            smtp_server: String::new(),
+            smtp_port: "587".to_string(),
+            smtp_username: String::new(),
+            smtp_password: String::new(),
+            master_password: String::new(),
+            master_password_confirm: String::new(),
+            current_field: CredentialField::ImapServer,
+            cursor_position: 0,
+            show_passwords: false,
+        }
+    }
+}
+
+/// State for credentials unlock view (for encrypted file backend)
+#[derive(Debug, Clone)]
+pub struct CredentialsUnlockState {
+    pub master_password: String,
+    pub cursor_position: usize,
+    pub error_message: Option<String>,
+}
+
+impl CredentialsUnlockState {
+    pub fn new() -> Self {
+        Self {
+            master_password: String::new(),
+            cursor_position: 0,
+            error_message: None,
+        }
+    }
+}
+
 pub struct App {
     pub emails: Vec<Email>,
     pub current_view: View,
@@ -79,6 +155,10 @@ pub struct App {
     pub visual_mode: bool,
     pub visual_selections: HashSet<usize>,
     pub visual_anchor: Option<usize>,
+    pub credentials_manager: Option<CredentialsManager>,
+    pub credentials: Option<Credentials>,
+    pub credentials_setup_state: Option<CredentialsSetupState>,
+    pub credentials_unlock_state: Option<CredentialsUnlockState>,
     pub config: Config,
     pub accounts: Vec<DbAccount>,
     pub current_account_id: Option<i64>,
@@ -99,6 +179,10 @@ impl App {
             visual_mode: false,
             visual_selections: HashSet::new(),
             visual_anchor: None,
+            credentials_manager: None,
+            credentials: None,
+            credentials_setup_state: None,
+            credentials_unlock_state: None,
             config: Config::default(),
             accounts: Vec::new(),
             current_account_id: None,
@@ -184,9 +268,46 @@ impl App {
             Err(_) => None,
         };
 
+        // Initialize credentials manager
+        let credentials_manager = CredentialsManager::new();
+        
+        // Determine initial view based on credentials state
+        let (initial_view, credentials, credentials_setup_state, credentials_unlock_state) = 
+            if !credentials_manager.credentials_exist() {
+                // No credentials exist - show setup screen
+                (
+                    View::CredentialsSetup,
+                    None,
+                    Some(CredentialsSetupState::new(credentials_manager.backend())),
+                    None,
+                )
+            } else if credentials_manager.backend() == StorageBackend::EncryptedFile {
+                // Credentials exist but need to be unlocked
+                (
+                    View::CredentialsUnlock,
+                    None,
+                    None,
+                    Some(CredentialsUnlockState::new()),
+                )
+            } else {
+                // Credentials exist in keyring - load them automatically
+                match credentials_manager.load_credentials(None) {
+                    Ok(creds) => (View::InboxList, Some(creds), None, None),
+                    Err(_) => {
+                        // Failed to load - show setup screen
+                        (
+                            View::CredentialsSetup,
+                            None,
+                            Some(CredentialsSetupState::new(credentials_manager.backend())),
+                            None,
+                        )
+                    }
+                }
+            };
+
         Ok(Self {
             emails,
-            current_view: View::InboxList,
+            current_view: initial_view,
             selected_index: 0,
             should_quit: false,
             status_message: None,
@@ -197,6 +318,10 @@ impl App {
             visual_mode: false,
             visual_selections: HashSet::new(),
             visual_anchor: None,
+            credentials_manager: Some(credentials_manager),
+            credentials,
+            credentials_setup_state,
+            credentials_unlock_state,
             config,
             accounts,
             current_account_id,
@@ -828,6 +953,386 @@ impl App {
         self.emails.get(self.selected_index)
     }
 
+    // ============ Credentials Management Methods ============
+
+    /// Navigate to next field in credentials setup
+    pub fn credentials_setup_next_field(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            // Determine if we should go to master password field
+            let use_encrypted_file = self.credentials_manager
+                .as_ref()
+                .map(|m| m.backend() == StorageBackend::EncryptedFile)
+                .unwrap_or(false);
+
+            setup.current_field = match setup.current_field {
+                CredentialField::ImapServer => CredentialField::ImapPort,
+                CredentialField::ImapPort => CredentialField::ImapUsername,
+                CredentialField::ImapUsername => CredentialField::ImapPassword,
+                CredentialField::ImapPassword => CredentialField::SmtpServer,
+                CredentialField::SmtpServer => CredentialField::SmtpPort,
+                CredentialField::SmtpPort => CredentialField::SmtpUsername,
+                CredentialField::SmtpUsername => CredentialField::SmtpPassword,
+                CredentialField::SmtpPassword => {
+                    if use_encrypted_file {
+                        CredentialField::MasterPassword
+                    } else {
+                        CredentialField::ImapServer
+                    }
+                }
+                CredentialField::MasterPassword => CredentialField::MasterPasswordConfirm,
+                CredentialField::MasterPasswordConfirm => CredentialField::ImapServer,
+            };
+            
+            // Update cursor position to end of new field
+            setup.cursor_position = match setup.current_field {
+                CredentialField::ImapServer => setup.imap_server.len(),
+                CredentialField::ImapPort => setup.imap_port.len(),
+                CredentialField::ImapUsername => setup.imap_username.len(),
+                CredentialField::ImapPassword => setup.imap_password.len(),
+                CredentialField::SmtpServer => setup.smtp_server.len(),
+                CredentialField::SmtpPort => setup.smtp_port.len(),
+                CredentialField::SmtpUsername => setup.smtp_username.len(),
+                CredentialField::SmtpPassword => setup.smtp_password.len(),
+                CredentialField::MasterPassword => setup.master_password.len(),
+                CredentialField::MasterPasswordConfirm => setup.master_password_confirm.len(),
+            };
+        }
+    }
+
+    /// Navigate to previous field in credentials setup
+    pub fn credentials_setup_prev_field(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            // Determine if we should go to master password field
+            let use_encrypted_file = self.credentials_manager
+                .as_ref()
+                .map(|m| m.backend() == StorageBackend::EncryptedFile)
+                .unwrap_or(false);
+
+            setup.current_field = match setup.current_field {
+                CredentialField::ImapServer => {
+                    if use_encrypted_file {
+                        CredentialField::MasterPasswordConfirm
+                    } else {
+                        CredentialField::SmtpPassword
+                    }
+                }
+                CredentialField::ImapPort => CredentialField::ImapServer,
+                CredentialField::ImapUsername => CredentialField::ImapPort,
+                CredentialField::ImapPassword => CredentialField::ImapUsername,
+                CredentialField::SmtpServer => CredentialField::ImapPassword,
+                CredentialField::SmtpPort => CredentialField::SmtpServer,
+                CredentialField::SmtpUsername => CredentialField::SmtpPort,
+                CredentialField::SmtpPassword => CredentialField::SmtpUsername,
+                CredentialField::MasterPassword => CredentialField::SmtpPassword,
+                CredentialField::MasterPasswordConfirm => CredentialField::MasterPassword,
+            };
+            
+            // Update cursor position to end of new field
+            setup.cursor_position = match setup.current_field {
+                CredentialField::ImapServer => setup.imap_server.len(),
+                CredentialField::ImapPort => setup.imap_port.len(),
+                CredentialField::ImapUsername => setup.imap_username.len(),
+                CredentialField::ImapPassword => setup.imap_password.len(),
+                CredentialField::SmtpServer => setup.smtp_server.len(),
+                CredentialField::SmtpPort => setup.smtp_port.len(),
+                CredentialField::SmtpUsername => setup.smtp_username.len(),
+                CredentialField::SmtpPassword => setup.smtp_password.len(),
+                CredentialField::MasterPassword => setup.master_password.len(),
+                CredentialField::MasterPasswordConfirm => setup.master_password_confirm.len(),
+            };
+        }
+    }
+
+    /// Insert character into current credentials setup field
+    pub fn credentials_setup_insert_char(&mut self, c: char) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            let text = match setup.current_field {
+                CredentialField::ImapServer => &mut setup.imap_server,
+                CredentialField::ImapPort => &mut setup.imap_port,
+                CredentialField::ImapUsername => &mut setup.imap_username,
+                CredentialField::ImapPassword => &mut setup.imap_password,
+                CredentialField::SmtpServer => &mut setup.smtp_server,
+                CredentialField::SmtpPort => &mut setup.smtp_port,
+                CredentialField::SmtpUsername => &mut setup.smtp_username,
+                CredentialField::SmtpPassword => &mut setup.smtp_password,
+                CredentialField::MasterPassword => &mut setup.master_password,
+                CredentialField::MasterPasswordConfirm => &mut setup.master_password_confirm,
+            };
+
+            if setup.cursor_position <= text.len() {
+                text.insert(setup.cursor_position, c);
+                setup.cursor_position += 1;
+            }
+        }
+    }
+
+    /// Delete character from current credentials setup field
+    pub fn credentials_setup_delete_char(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            if setup.cursor_position > 0 {
+                let text = match setup.current_field {
+                    CredentialField::ImapServer => &mut setup.imap_server,
+                    CredentialField::ImapPort => &mut setup.imap_port,
+                    CredentialField::ImapUsername => &mut setup.imap_username,
+                    CredentialField::ImapPassword => &mut setup.imap_password,
+                    CredentialField::SmtpServer => &mut setup.smtp_server,
+                    CredentialField::SmtpPort => &mut setup.smtp_port,
+                    CredentialField::SmtpUsername => &mut setup.smtp_username,
+                    CredentialField::SmtpPassword => &mut setup.smtp_password,
+                    CredentialField::MasterPassword => &mut setup.master_password,
+                    CredentialField::MasterPasswordConfirm => &mut setup.master_password_confirm,
+                };
+
+                setup.cursor_position -= 1;
+                text.remove(setup.cursor_position);
+            }
+        }
+    }
+
+    /// Move cursor left in credentials setup
+    pub fn credentials_setup_cursor_left(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            if setup.cursor_position > 0 {
+                setup.cursor_position -= 1;
+            }
+        }
+    }
+
+    /// Move cursor right in credentials setup
+    pub fn credentials_setup_cursor_right(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            let max_pos = match setup.current_field {
+                CredentialField::ImapServer => setup.imap_server.len(),
+                CredentialField::ImapPort => setup.imap_port.len(),
+                CredentialField::ImapUsername => setup.imap_username.len(),
+                CredentialField::ImapPassword => setup.imap_password.len(),
+                CredentialField::SmtpServer => setup.smtp_server.len(),
+                CredentialField::SmtpPort => setup.smtp_port.len(),
+                CredentialField::SmtpUsername => setup.smtp_username.len(),
+                CredentialField::SmtpPassword => setup.smtp_password.len(),
+                CredentialField::MasterPassword => setup.master_password.len(),
+                CredentialField::MasterPasswordConfirm => setup.master_password_confirm.len(),
+            };
+            if setup.cursor_position < max_pos {
+                setup.cursor_position += 1;
+            }
+        }
+    }
+
+    /// Toggle password visibility in credentials setup
+    pub fn credentials_setup_toggle_password_visibility(&mut self) {
+        if let Some(ref mut setup) = self.credentials_setup_state {
+            setup.show_passwords = !setup.show_passwords;
+        }
+    }
+
+    /// Save credentials from setup form
+    pub fn credentials_setup_save(&mut self) {
+        let setup = match &self.credentials_setup_state {
+            Some(s) => s.clone(),
+            None => return,
+        };
+
+        let manager = match &self.credentials_manager {
+            Some(m) => m,
+            None => return,
+        };
+
+        // Validate fields
+        if setup.imap_server.is_empty() || setup.imap_username.is_empty() 
+            || setup.smtp_server.is_empty() || setup.smtp_username.is_empty() {
+            self.status_message = Some("Please fill in all required fields".to_string());
+            return;
+        }
+
+        // Parse ports
+        let imap_port = match setup.imap_port.parse::<u16>() {
+            Ok(p) => p,
+            Err(_) => {
+                self.status_message = Some("Invalid IMAP port number".to_string());
+                return;
+            }
+        };
+
+        let smtp_port = match setup.smtp_port.parse::<u16>() {
+            Ok(p) => p,
+            Err(_) => {
+                self.status_message = Some("Invalid SMTP port number".to_string());
+                return;
+            }
+        };
+
+        // For encrypted file backend, validate master password
+        let master_password = if manager.backend() == StorageBackend::EncryptedFile {
+            if setup.master_password.is_empty() {
+                self.status_message = Some("Master password is required".to_string());
+                return;
+            }
+            if setup.master_password != setup.master_password_confirm {
+                self.status_message = Some("Master passwords do not match".to_string());
+                return;
+            }
+            if setup.master_password.len() < 8 {
+                self.status_message = Some("Master password must be at least 8 characters".to_string());
+                return;
+            }
+            Some(setup.master_password.as_str())
+        } else {
+            None
+        };
+
+        // Create credentials object
+        let credentials = Credentials {
+            imap_server: setup.imap_server.clone(),
+            imap_port,
+            imap_username: setup.imap_username.clone(),
+            imap_password: setup.imap_password.clone(),
+            smtp_server: setup.smtp_server.clone(),
+            smtp_port,
+            smtp_username: setup.smtp_username.clone(),
+            smtp_password: setup.smtp_password.clone(),
+        };
+
+        // Save credentials
+        match manager.save_credentials(&credentials, master_password) {
+            Ok(_) => {
+                self.credentials = Some(credentials);
+                self.credentials_setup_state = None;
+                self.current_view = View::InboxList;
+                self.status_message = Some(format!(
+                    "Credentials saved successfully using {}",
+                    manager.backend().as_str()
+                ));
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Failed to save credentials: {}", e));
+            }
+        }
+    }
+
+    /// Cancel credentials setup
+    pub fn credentials_setup_cancel(&mut self) {
+        // If credentials don't exist yet, quit the app
+        if let Some(ref manager) = self.credentials_manager {
+            if !manager.credentials_exist() {
+                self.should_quit = true;
+                return;
+            }
+        }
+
+        // Otherwise, clear setup state and return to inbox
+        self.credentials_setup_state = None;
+        self.current_view = View::InboxList;
+    }
+
+    /// Insert character into unlock password field
+    pub fn credentials_unlock_insert_char(&mut self, c: char) {
+        if let Some(ref mut unlock) = self.credentials_unlock_state {
+            if unlock.cursor_position <= unlock.master_password.len() {
+                unlock.master_password.insert(unlock.cursor_position, c);
+                unlock.cursor_position += 1;
+            }
+        }
+    }
+
+    /// Delete character from unlock password field
+    pub fn credentials_unlock_delete_char(&mut self) {
+        if let Some(ref mut unlock) = self.credentials_unlock_state {
+            if unlock.cursor_position > 0 {
+                unlock.cursor_position -= 1;
+                unlock.master_password.remove(unlock.cursor_position);
+            }
+        }
+    }
+
+    /// Move cursor left in unlock password field
+    pub fn credentials_unlock_cursor_left(&mut self) {
+        if let Some(ref mut unlock) = self.credentials_unlock_state {
+            if unlock.cursor_position > 0 {
+                unlock.cursor_position -= 1;
+            }
+        }
+    }
+
+    /// Move cursor right in unlock password field
+    pub fn credentials_unlock_cursor_right(&mut self) {
+        if let Some(ref mut unlock) = self.credentials_unlock_state {
+            if unlock.cursor_position < unlock.master_password.len() {
+                unlock.cursor_position += 1;
+            }
+        }
+    }
+
+    /// Attempt to unlock credentials with provided password
+    pub fn credentials_unlock_submit(&mut self) {
+        let password = match &self.credentials_unlock_state {
+            Some(state) => state.master_password.clone(),
+            None => return,
+        };
+
+        let manager = match &self.credentials_manager {
+            Some(m) => m,
+            None => return,
+        };
+
+        // Attempt to load credentials
+        match manager.load_credentials(Some(&password)) {
+            Ok(credentials) => {
+                self.credentials = Some(credentials);
+                self.credentials_unlock_state = None;
+                self.current_view = View::InboxList;
+                self.status_message = Some("Credentials unlocked successfully".to_string());
+            }
+            Err(e) => {
+                if let Some(ref mut unlock) = self.credentials_unlock_state {
+                    unlock.error_message = Some(format!("Failed to unlock: {}", e));
+                    unlock.master_password.clear();
+                    unlock.cursor_position = 0;
+                }
+            }
+        }
+    }
+
+    /// Cancel credential unlock (quit app)
+    pub fn credentials_unlock_cancel(&mut self) {
+        self.should_quit = true;
+    }
+
+    /// Enter credentials management view
+    pub fn enter_credentials_management(&mut self) {
+        self.current_view = View::CredentialsManagement;
+    }
+
+    /// Exit credentials management view
+    pub fn exit_credentials_management(&mut self) {
+        self.current_view = View::InboxList;
+    }
+
+    /// Reset credentials (delete and return to setup)
+    pub fn credentials_reset(&mut self) {
+        if let Some(ref manager) = self.credentials_manager {
+            match manager.delete_credentials() {
+                Ok(_) => {
+                    self.credentials = None;
+                    self.credentials_setup_state = Some(CredentialsSetupState::new(manager.backend()));
+                    self.current_view = View::CredentialsSetup;
+                    self.status_message = Some("Credentials reset. Please set up new credentials.".to_string());
+                }
+                Err(e) => {
+                    self.status_message = Some(format!("Failed to reset credentials: {}", e));
+                }
+            }
+        }
+    }
+
+    /// Get backend info for display
+    pub fn get_backend_info(&self) -> Option<(StorageBackend, String)> {
+        self.credentials_manager.as_ref().map(|m| {
+            let backend = m.backend();
+            let description = backend.description().to_string();
+            (backend, description)
+        })
+    }
     /// Get the current account name for display
     pub fn get_current_account_name(&self) -> Option<String> {
         self.current_account_id.and_then(|id| {
@@ -1247,6 +1752,10 @@ mod tests {
             visual_mode: false,
             visual_selections: HashSet::new(),
             visual_anchor: None,
+            credentials_manager: None,
+            credentials: None,
+            credentials_setup_state: None,
+            credentials_unlock_state: None,
             config: Config::default(),
             accounts: Vec::new(),
             current_account_id: None,
@@ -1317,6 +1826,10 @@ mod tests {
             visual_mode: false,
             visual_selections: HashSet::new(),
             visual_anchor: None,
+            credentials_manager: None,
+            credentials: None,
+            credentials_setup_state: None,
+            credentials_unlock_state: None,
             config: Config::default(),
             accounts: Vec::new(),
             current_account_id: None,

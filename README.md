@@ -18,6 +18,126 @@ A Terminal User Interface (TUI) email client built with Rust, featuring vim-styl
 - **Draft Management**: Auto-save drafts on exit, restore on re-entry, with explicit save option
 - **Local Database**: Email and draft storage using Turso/libSQL at `~/.local/share/tume/mail.db`
 - **Email Actions**: Delete, archive, reply, forward emails (reply and forward are placeholders)
+- **Hybrid Credentials Storage**: Secure storage using system keyring or encrypted file with master password
+
+## Credentials Management
+
+TUME features a robust hybrid credentials storage system that prioritizes security while ensuring compatibility across all platforms.
+
+### Storage Backends
+
+#### System Keyring (Default)
+
+On supported platforms, TUME automatically uses your system's secure credential storage:
+
+- **macOS**: Keychain
+- **Windows**: Credential Manager
+- **Linux**: Secret Service (requires `libsecret` or similar)
+
+No master password is required - credentials are protected by your system's security.
+
+#### Encrypted File (Fallback)
+
+If the system keyring is unavailable (headless Linux, containers, or unsupported environments), TUME automatically falls back to an encrypted file:
+
+- **Location**: `~/.local/share/tume/credentials.enc`
+- **Encryption**: AES-256-GCM with Argon2 key derivation
+- **Protection**: Secured by a user-provided master password
+
+### First-Time Setup
+
+When you first run TUME, you'll be guided through credential setup:
+
+1. **Configure Email Server Settings**:
+   - IMAP server address and port
+   - IMAP username and password
+   - SMTP server address and port
+   - SMTP username and password
+
+2. **Set Master Password** (if using encrypted file backend):
+   - Choose a strong password (minimum 8 characters)
+   - Confirm the password
+   - This password will be required each time you start TUME
+
+3. **Save Credentials**:
+   - Press `Enter` to save your credentials
+   - The backend selection is automatic based on availability
+
+### Credentials Setup View
+
+| Key | Action |
+|-----|--------|
+| `Tab`, `j`, `↓` | Navigate to next field |
+| `Shift+Tab`, `k`, `↑` | Navigate to previous field |
+| Type | Enter text in current field |
+| `Backspace` | Delete character |
+| `Left` / `Right` | Move cursor |
+| `P` | Toggle password visibility |
+| `Enter` | Save credentials |
+| `Esc` | Cancel setup (quit if first-time) |
+
+### Unlocking Credentials
+
+If using the encrypted file backend, you'll need to unlock your credentials at startup:
+
+| Key | Action |
+|-----|--------|
+| Type | Enter master password |
+| `Backspace` | Delete character |
+| `Left` / `Right` | Move cursor |
+| `Enter` | Unlock and continue |
+| `Esc` | Quit application |
+
+### Managing Credentials
+
+Access the credentials management menu from the inbox by pressing `m`:
+
+- **View Backend Info**: See which storage backend is active and why
+- **Reset Credentials**: Delete existing credentials and set up new ones
+- **Backend Details**: Learn about your current storage method
+
+### Security Best Practices
+
+1. **Master Password**: If using encrypted file storage, choose a strong, unique password
+2. **System Keyring**: Keep your system account secure - anyone with access can read keyring credentials
+3. **Encrypted File**: Your encrypted credentials file is only as secure as your master password
+4. **Network Security**: Always use TLS/SSL for IMAP and SMTP connections (default ports 993/587)
+
+### Troubleshooting
+
+#### Linux: System Keyring Not Available
+
+If TUME falls back to encrypted file on Linux desktop:
+
+```bash
+# Install libsecret on Debian/Ubuntu
+sudo apt-get install libsecret-1-0 libsecret-1-dev
+
+# Install on Fedora
+sudo dnf install libsecret libsecret-devel
+
+# Install on Arch
+sudo pacman -S libsecret
+```
+
+After installation, restart TUME to use the system keyring.
+
+#### Forgot Master Password
+
+If you forget your master password for the encrypted file backend:
+
+1. The credentials file cannot be decrypted
+2. You'll need to delete `~/.local/share/tume/credentials.enc`
+3. Restart TUME and set up credentials again
+
+#### Migration Between Backends
+
+Currently, manual migration is not supported. To switch backends:
+
+1. Note your current credentials
+2. Reset credentials in the management menu
+3. TUME will detect the available backend
+4. Re-enter your credentials
 
 ## Installation
 
@@ -131,6 +251,7 @@ The inbox displays a list of emails with the following information:
 | `r` | Reply to email (placeholder) |
 | `c` | Compose new email |
 | `f` | Forward email (placeholder) |
+| `m` | Manage credentials |
 | `q` | Quit application |
 
 #### Visual Line Mode
@@ -317,6 +438,12 @@ The application is structured into several modules:
 - **libsql**: Turso/libSQL for local database storage
 - **tokio**: Async runtime for database operations
 - **dirs**: Cross-platform directory paths
+- **keyring**: System keyring integration for secure credential storage
+- **aes-gcm**: AES-256-GCM encryption for file-based credentials
+- **argon2**: Password hashing and key derivation
+- **serde** / **serde_json**: Data serialization
+- **zeroize**: Secure memory zeroing for sensitive data
+- **base64**: Binary data encoding
 
 ## Development Status
 
@@ -331,6 +458,9 @@ The application is structured into several modules:
 - ✅ Single delete and archive operations
 - ✅ Draft management (auto-save, restore, explicit save with 'w')
 - ✅ Local database storage for emails and drafts
+- ✅ Hybrid credentials storage (system keyring + encrypted file fallback)
+- ✅ Secure credential management UI
+- ✅ First-time setup wizard
 - ✅ Multi-account support with configuration
 - ✅ Account switching (1-9, [, ], Tab)
 - ✅ GPG and Yubikey hooks (stubs for future encryption/signing)
