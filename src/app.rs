@@ -1322,59 +1322,62 @@ impl App {
                 self.credentials = Some(credentials.clone());
                 
                 // Save account configuration to config file
-                if let Some(provider_id) = &setup.selected_provider {
-                    let provider_name = crate::providers::EmailProvider::by_id(provider_id)
-                        .map(|p| p.name)
-                        .unwrap_or("Custom");
+                // Use selected provider or fallback to "custom"
+                let provider_id = setup.selected_provider.as_ref()
+                    .map(|s| s.clone())
+                    .unwrap_or_else(|| "custom".to_string());
                     
-                    // Create account entry
-                    let account = crate::config::Account {
-                        name: format!("{} Account", provider_name),
-                        email: setup.imap_username.clone(),
-                        provider: provider_id.clone(),
-                        default: true, // First account is default
-                        color: Some("blue".to_string()),
-                        display_order: Some(1),
-                    };
-                    
-                    // Add to config and save
-                    let account_key = provider_id.replace(" ", "_").to_lowercase();
-                    self.config.accounts.insert(account_key, account.clone());
-                    
-                    // Try to save config - if it fails, still continue but show error
-                    let config_saved = match self.config.save() {
-                        Ok(_) => true,
-                        Err(e) => {
-                            eprintln!("ERROR: Failed to save config file: {}", e);
-                            self.status_message = Some(format!("ERROR: Failed to save config file: {}. Account will be lost on restart!", e));
-                            false
-                        }
-                    };
-                    
-                    // Always try to add to in-memory accounts list
-                    let db_account = crate::db::DbAccount {
-                        id: 0,
-                        name: account.name.clone(),
-                        email: account.email.clone(),
-                        provider: account.provider.clone(),
-                        is_default: account.default,
-                        color: account.color.clone(),
-                        display_order: account.display_order.unwrap_or(999),
-                    };
-                    self.accounts.push(db_account.clone());
-                    self.current_account_id = Some(db_account.id);
-                    
-                    if config_saved {
-                        self.status_message = Some(format!(
-                            "Credentials and account configuration saved successfully using {}. Email sync not yet implemented - using mock data.",
-                            manager.backend().as_str()
-                        ));
+                let provider_name = crate::providers::EmailProvider::by_id(&provider_id)
+                    .map(|p| p.name)
+                    .unwrap_or("Custom");
+                
+                // Create account entry
+                let account = crate::config::Account {
+                    name: format!("{} Account", provider_name),
+                    email: setup.imap_username.clone(),
+                    provider: provider_id.clone(),
+                    default: true, // First account is default
+                    color: Some("blue".to_string()),
+                    display_order: Some(1),
+                };
+                
+                // Add to config and save
+                let account_key = provider_id.replace(" ", "_").to_lowercase();
+                self.config.accounts.insert(account_key, account.clone());
+                
+                // Try to save config - if it fails, still continue but show error
+                let config_saved = match self.config.save() {
+                    Ok(_) => {
+                        eprintln!("DEBUG: Config saved successfully to {:?}", crate::config::Config::config_path());
+                        true
+                    },
+                    Err(e) => {
+                        eprintln!("ERROR: Failed to save config file: {}", e);
+                        self.status_message = Some(format!("ERROR: Failed to save config file: {}. Account will be lost on restart!", e));
+                        false
                     }
-                } else {
+                };
+                
+                // Always try to add to in-memory accounts list
+                let db_account = crate::db::DbAccount {
+                    id: 0,
+                    name: account.name.clone(),
+                    email: account.email.clone(),
+                    provider: account.provider.clone(),
+                    is_default: account.default,
+                    color: account.color.clone(),
+                    display_order: account.display_order.unwrap_or(999),
+                };
+                self.accounts.push(db_account.clone());
+                self.current_account_id = Some(db_account.id);
+                
+                if config_saved {
                     self.status_message = Some(format!(
-                        "Credentials saved successfully using {}. Email sync not yet implemented - using mock data.",
+                        "Credentials and account configuration saved successfully using {}. Email sync not yet implemented - using mock data.",
                         manager.backend().as_str()
                     ));
+                } else {
+                    // Error message already set above
                 }
                 
                 self.credentials_setup_state = None;
