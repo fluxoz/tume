@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use crate::theme::Theme;
 
 /// Represents a single email account/mailbox
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -67,6 +68,30 @@ impl Default for Keybindings {
     }
 }
 
+/// UI Theme configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UiConfig {
+    /// Theme name (gruvbox-dark, dracula, nord, solarized-dark, tokyo-night)
+    #[serde(default = "default_theme_name")]
+    pub theme: String,
+    /// Custom theme overrides (optional)
+    #[serde(default)]
+    pub custom_theme: Option<Theme>,
+}
+
+fn default_theme_name() -> String {
+    "gruvbox-dark".to_string()
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self {
+            theme: default_theme_name(),
+            custom_theme: None,
+        }
+    }
+}
+
 /// Main configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -74,6 +99,8 @@ pub struct Config {
     pub accounts: HashMap<String, Account>,
     #[serde(default)]
     pub keybindings: Keybindings,
+    #[serde(default)]
+    pub ui: UiConfig,
 }
 
 impl Default for Config {
@@ -81,6 +108,7 @@ impl Default for Config {
         Self {
             accounts: HashMap::new(),
             keybindings: Keybindings::default(),
+            ui: UiConfig::default(),
         }
     }
 }
@@ -307,6 +335,15 @@ impl Config {
     /// Remove an account
     pub fn remove_account(&mut self, key: &str) -> Option<Account> {
         self.accounts.remove(key)
+    }
+    
+    /// Get the current theme (either custom or by name)
+    pub fn get_theme(&self) -> Theme {
+        if let Some(ref custom) = self.ui.custom_theme {
+            custom.clone()
+        } else {
+            Theme::by_name(&self.ui.theme).unwrap_or_default()
+        }
     }
 }
 

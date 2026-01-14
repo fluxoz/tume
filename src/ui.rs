@@ -7,7 +7,7 @@ use ratatui::{
 };
 use tui_markdown::from_str;
 
-use crate::app::{App, ComposeField, ComposeMode, View, CredentialField};
+use crate::app::{App, ComposeField, ComposeMode, View, CredentialField, CredentialsMode};
 use crate::credentials::StorageBackend;
 
 // Layout constants
@@ -84,6 +84,8 @@ pub fn draw(f: &mut Frame, app: &App) {
 }
 
 fn render_header(f: &mut Frame, area: Rect, app: &App) {
+    let theme = &app.theme;
+    
     // Build header text with account info if available
     // Don't show account name during credentials setup/unlock
     let header_text = if app.current_view == View::CredentialsSetup 
@@ -99,11 +101,13 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
     let header = Paragraph::new(header_text)
         .style(
             Style::default()
-                .fg(Color::Cyan)
+                .fg(theme.title.to_color())
                 .add_modifier(Modifier::BOLD),
         )
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL));
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.border.to_color())));
     f.render_widget(header, area);
 }
 
@@ -140,6 +144,8 @@ fn render_inbox(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_inbox_list(f: &mut Frame, area: Rect, app: &App) {
+    let theme = &app.theme;
+    
     let items: Vec<ListItem> = app
         .emails
         .iter()
@@ -149,23 +155,23 @@ fn render_inbox_list(f: &mut Frame, area: Rect, app: &App) {
             let style = if i == app.selected_index && app.is_email_selected(i) {
                 // Cursor position within visual selection - use a distinct color
                 Style::default()
-                    .bg(Color::Cyan)
-                    .fg(Color::Black)
+                    .bg(theme.cursor.to_color())
+                    .fg(theme.text_bold.to_color())
                     .add_modifier(Modifier::BOLD)
             } else if app.is_email_selected(i) {
                 // In visual mode and selected (but not cursor)
                 Style::default()
-                    .bg(Color::Blue)
-                    .fg(Color::White)
+                    .bg(theme.visual_selection.to_color())
+                    .fg(theme.text_normal.to_color())
                     .add_modifier(Modifier::BOLD)
             } else if i == app.selected_index {
                 // Cursor position (not selected in visual mode)
                 Style::default()
-                    .bg(Color::DarkGray)
-                    .fg(Color::White)
+                    .bg(theme.selection.to_color())
+                    .fg(theme.text_bold.to_color())
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default()
+                Style::default().fg(theme.text_normal.to_color())
             };
 
             // Calculate column widths for proper alignment
@@ -230,6 +236,7 @@ fn render_inbox_list(f: &mut Frame, area: Rect, app: &App) {
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.border.to_color()))
             .title(title),
     );
 
@@ -237,6 +244,8 @@ fn render_inbox_list(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_inbox_preview(f: &mut Frame, area: Rect, app: &App) {
+    let theme = &app.theme;
+    
     if let Some(email) = app.get_selected_email() {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -247,23 +256,35 @@ fn render_inbox_preview(f: &mut Frame, area: Rect, app: &App) {
         let metadata = build_email_metadata(&email.from, &email.subject, &email.date);
 
         let metadata_widget =
-            Paragraph::new(metadata).block(Block::default().borders(Borders::ALL).title("Preview"));
+            Paragraph::new(metadata).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(theme.border.to_color()))
+                    .title("Preview"));
         f.render_widget(metadata_widget, chunks[0]);
 
         // Email body
         let body = Paragraph::new(email.body.as_str())
-            .block(Block::default().borders(Borders::ALL).title("Message"))
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.border.to_color()))
+                .title("Message"))
             .wrap(Wrap { trim: false });
         f.render_widget(body, chunks[1]);
     } else {
         let placeholder = Paragraph::new("No email selected")
-            .block(Block::default().borders(Borders::ALL).title("Preview"))
-            .style(Style::default().fg(Color::DarkGray));
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.border.to_color()))
+                .title("Preview"))
+            .style(Style::default().fg(theme.text_dim.to_color()));
         f.render_widget(placeholder, area);
     }
 }
 
 fn render_email_detail(f: &mut Frame, area: Rect, app: &App) {
+    let theme = &app.theme;
+    
     if let Some(email) = app.get_selected_email() {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -276,6 +297,7 @@ fn render_email_detail(f: &mut Frame, area: Rect, app: &App) {
         let metadata_widget = Paragraph::new(metadata).block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.border.to_color()))
                 .title("Email Details"),
         );
         f.render_widget(metadata_widget, chunks[0]);
@@ -285,6 +307,7 @@ fn render_email_detail(f: &mut Frame, area: Rect, app: &App) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
+                    .border_style(Style::default().fg(theme.border.to_color()))
                     .title("Message (h to go back)"),
             )
             .wrap(Wrap { trim: false });
@@ -293,6 +316,8 @@ fn render_email_detail(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_footer(f: &mut Frame, area: Rect, app: &App) {
+    let theme = &app.theme;
+    
     let help_text = match app.current_view {
         View::InboxList => {
             if app.visual_mode {
@@ -342,23 +367,86 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
         }
     };
 
+    // Build status bar with mode indicator and current theme
+    let mode_text = match app.current_view {
+        View::InboxList if app.visual_mode => " VISUAL LINE ",
+        View::Compose => {
+            if let Some(ref compose) = app.compose_state {
+                match compose.mode {
+                    ComposeMode::Normal => " NORMAL ",
+                    ComposeMode::Insert => " INSERT ",
+                }
+            } else {
+                ""
+            }
+        }
+        View::CredentialsSetup => {
+            if let Some(ref setup) = app.credentials_setup_state {
+                match setup.mode {
+                    CredentialsMode::Normal => " NORMAL ",
+                    CredentialsMode::Insert => " INSERT ",
+                }
+            } else {
+                ""
+            }
+        }
+        _ => "",
+    };
+    
+    // Email count indicator
+    let email_count = if app.current_view == View::InboxList {
+        format!(" {} emails ", app.emails.len())
+    } else {
+        String::new()
+    };
+    
+    // Theme name in footer
+    let theme_indicator = format!(" {} ", app.theme.name);
+
     let text = if let Some(ref msg) = app.status_message {
         vec![
-            Line::from(Span::styled(msg, Style::default().fg(Color::Yellow))),
-            Line::from(Span::raw(help_text)),
+            Line::from(vec![
+                Span::styled(mode_text, 
+                    Style::default()
+                        .bg(theme.status_bar_mode.to_color())
+                        .fg(theme.status_bar.to_color())  // Use status_bar color for better contrast
+                        .add_modifier(Modifier::BOLD)),
+                Span::raw(" "),
+                Span::styled(msg, Style::default().fg(theme.warning.to_color())),
+                Span::raw("  "),
+                Span::styled(email_count, Style::default().fg(theme.text_dim.to_color())),
+                Span::styled(theme_indicator, Style::default().fg(theme.text_dim.to_color())),
+            ]),
+            Line::from(Span::styled(help_text, Style::default().fg(theme.text_dim.to_color()))),
         ]
     } else {
-        vec![Line::from(Span::raw(help_text))]
+        vec![
+            Line::from(vec![
+                Span::styled(mode_text, 
+                    Style::default()
+                        .bg(theme.status_bar_mode.to_color())
+                        .fg(theme.status_bar.to_color())  // Use status_bar color for better contrast
+                        .add_modifier(Modifier::BOLD)),
+                Span::raw(" "),
+                Span::styled(email_count, Style::default().fg(theme.text_dim.to_color())),
+                Span::styled(theme_indicator, Style::default().fg(theme.text_dim.to_color())),
+            ]),
+            Line::from(Span::styled(help_text, Style::default().fg(theme.text_dim.to_color()))),
+        ]
     };
 
     let footer = Paragraph::new(text)
-        .style(Style::default().fg(Color::Gray))
-        .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL));
+        .style(Style::default().bg(theme.status_bar.to_color()))
+        .alignment(Alignment::Left)
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.border.to_color())));
     f.render_widget(footer, area);
 }
 
 fn render_compose(f: &mut Frame, area: Rect, app: &App) {
+    let theme = &app.theme;
+    
     if let Some(ref compose) = app.compose_state {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -373,29 +461,38 @@ fn render_compose(f: &mut Frame, area: Rect, app: &App) {
         let recipients_style = if compose.current_field == ComposeField::Recipients {
             if compose.mode == ComposeMode::Insert {
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(theme.insert_mode.to_color())
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(theme.active_field.to_color())
                     .add_modifier(Modifier::BOLD)
             }
         } else {
-            Style::default()
+            Style::default().fg(theme.compose_field_label.to_color())
         };
 
         let recipients_text =
             if compose.recipients.is_empty() && compose.current_field != ComposeField::Recipients {
-                Span::styled("<empty>", Style::default().fg(Color::DarkGray))
+                Span::styled("<empty>", Style::default().fg(theme.compose_field_empty.to_color()))
             } else {
-                Span::styled(&compose.recipients, Style::default())
+                Span::styled(&compose.recipients, Style::default().fg(theme.compose_field_value.to_color()))
             };
 
         let recipients_widget = Paragraph::new(Line::from(vec![
             Span::styled("To: ", recipients_style),
             recipients_text,
         ]))
-        .block(Block::default().borders(Borders::ALL).title(
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(
+                if compose.current_field == ComposeField::Recipients {
+                    theme.border_focused.to_color()
+                } else {
+                    theme.border.to_color()
+                }
+            ))
+            .title(
             if compose.current_field == ComposeField::Recipients
                 && compose.mode == ComposeMode::Insert
             {
@@ -420,29 +517,38 @@ fn render_compose(f: &mut Frame, area: Rect, app: &App) {
         let subject_style = if compose.current_field == ComposeField::Subject {
             if compose.mode == ComposeMode::Insert {
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(theme.insert_mode.to_color())
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(theme.active_field.to_color())
                     .add_modifier(Modifier::BOLD)
             }
         } else {
-            Style::default()
+            Style::default().fg(theme.compose_field_label.to_color())
         };
 
         let subject_text =
             if compose.subject.is_empty() && compose.current_field != ComposeField::Subject {
-                Span::styled("<empty>", Style::default().fg(Color::DarkGray))
+                Span::styled("<empty>", Style::default().fg(theme.compose_field_empty.to_color()))
             } else {
-                Span::styled(&compose.subject, Style::default())
+                Span::styled(&compose.subject, Style::default().fg(theme.compose_field_value.to_color()))
             };
 
         let subject_widget = Paragraph::new(Line::from(vec![
             Span::styled("Subject: ", subject_style),
             subject_text,
         ]))
-        .block(Block::default().borders(Borders::ALL).title(
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(
+                if compose.current_field == ComposeField::Subject {
+                    theme.border_focused.to_color()
+                } else {
+                    theme.border.to_color()
+                }
+            ))
+            .title(
             if compose.current_field == ComposeField::Subject && compose.mode == ComposeMode::Insert
             {
                 "Subject [INSERT]"
@@ -526,7 +632,16 @@ fn render_compose(f: &mut Frame, area: Rect, app: &App) {
             let markdown_text = Text::from(lines);
 
             let body_widget = Paragraph::new(markdown_text)
-                .block(Block::default().borders(Borders::ALL).title(body_title))
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(
+                        if compose.current_field == ComposeField::Body {
+                            theme.border_focused.to_color()
+                        } else {
+                            theme.border.to_color()
+                        }
+                    ))
+                    .title(body_title))
                 .wrap(Wrap { trim: false });
             f.render_widget(body_widget, chunks[2]);
         } else {
@@ -539,7 +654,16 @@ fn render_compose(f: &mut Frame, area: Rect, app: &App) {
                 };
 
             let body_widget = Paragraph::new(body_text)
-                .block(Block::default().borders(Borders::ALL).title(body_title))
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(
+                        if compose.current_field == ComposeField::Body {
+                            theme.border_focused.to_color()
+                        } else {
+                            theme.border.to_color()
+                        }
+                    ))
+                    .title(body_title))
                 .wrap(Wrap { trim: false });
             f.render_widget(body_widget, chunks[2]);
 
@@ -585,6 +709,7 @@ fn render_credentials_setup(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_provider_selection(f: &mut Frame, area: Rect, app: &App) {
+    let theme = &app.theme;
     let setup = match &app.credentials_setup_state {
         Some(s) => s,
         None => return,
@@ -599,8 +724,9 @@ fn render_provider_selection(f: &mut Frame, area: Rect, app: &App) {
     let title = " Email Provider Setup ";
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.border.to_color()))
         .title(title)
-        .style(Style::default().fg(Color::Cyan));
+        .style(Style::default().fg(theme.title.to_color()));
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -618,7 +744,7 @@ fn render_provider_selection(f: &mut Frame, area: Rect, app: &App) {
     let instructions = vec![
         Line::from(Span::styled(
             "Select your email provider",
-            Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+            Style::default().add_modifier(Modifier::BOLD).fg(theme.text_highlight.to_color()),
         )),
         Line::from(""),
         Line::from(format!("Credentials will be stored using: {}", backend.as_str())),
@@ -634,10 +760,10 @@ fn render_provider_selection(f: &mut Frame, area: Rect, app: &App) {
         .map(|(i, provider)| {
             let style = if i == setup.provider_list_index {
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(theme.active_field.to_color())
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default()
+                Style::default().fg(theme.text_normal.to_color())
             };
 
             let marker = if i == setup.provider_list_index {
@@ -653,7 +779,7 @@ fn render_provider_selection(f: &mut Frame, area: Rect, app: &App) {
                 ]),
                 Line::from(vec![
                     Span::raw("    "),
-                    Span::styled(provider.description, Style::default().fg(Color::DarkGray)),
+                    Span::styled(provider.description, Style::default().fg(theme.text_dim.to_color())),
                 ]),
             ];
 
@@ -664,6 +790,7 @@ fn render_provider_selection(f: &mut Frame, area: Rect, app: &App) {
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.border.to_color()))
             .title("Available Providers"),
     );
     f.render_widget(list, chunks[1]);
