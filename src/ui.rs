@@ -408,7 +408,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
                 Span::styled(mode_text, 
                     Style::default()
                         .bg(theme.status_bar_mode.to_color())
-                        .fg(theme.background.to_color())
+                        .fg(theme.status_bar.to_color())  // Use status_bar color for better contrast
                         .add_modifier(Modifier::BOLD)),
                 Span::raw(" "),
                 Span::styled(msg, Style::default().fg(theme.warning.to_color())),
@@ -424,7 +424,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
                 Span::styled(mode_text, 
                     Style::default()
                         .bg(theme.status_bar_mode.to_color())
-                        .fg(theme.background.to_color())
+                        .fg(theme.status_bar.to_color())  // Use status_bar color for better contrast
                         .add_modifier(Modifier::BOLD)),
                 Span::raw(" "),
                 Span::styled(email_count, Style::default().fg(theme.text_dim.to_color())),

@@ -94,7 +94,11 @@ impl ColorSpec {
             "lightmagenta" => Color::LightMagenta,
             "lightcyan" => Color::LightCyan,
             "white" => Color::White,
-            _ => Color::Reset,
+            _ => {
+                // Log warning for unrecognized color names to help debug config issues
+                eprintln!("Warning: Unrecognized color name '{}', defaulting to Reset", name);
+                Color::Reset
+            }
         }
     }
 }
