@@ -48,33 +48,75 @@ If the system keyring is unavailable (headless Linux, containers, or unsupported
 
 When you first run TUME, you'll be guided through credential setup:
 
-1. **Configure Email Server Settings**:
-   - IMAP server address and port
+1. **Select Your Email Provider**:
+   - Choose from popular pre-configured providers:
+     - **Gmail** - Google Gmail (requires app-specific password if 2FA enabled)
+     - **Outlook / Office 365** - Microsoft email services
+     - **Yahoo Mail** - Yahoo email (requires app-specific password)
+     - **ProtonMail Bridge** - ProtonMail via local bridge
+     - **iCloud Mail** - Apple iCloud (requires app-specific password)
+     - **Fastmail** - Privacy-focused email service
+     - **AOL Mail** - AOL email (requires app-specific password)
+     - **Zoho Mail** - Business and personal email
+     - **GMX Mail** - Free email service
+     - **Mail.com** - Free email with many domain options
+     - **Yandex Mail** - Russian email service
+     - **Custom (Other Provider)** - Manually configure any other IMAP/SMTP provider
+   
+   Server settings (IMAP/SMTP addresses and ports) are automatically pre-filled based on your provider selection!
+
+2. **Configure Email Server Settings**:
+   - IMAP server address and port (pre-filled for known providers)
    - IMAP username and password
-   - SMTP server address and port
+   - SMTP server address and port (pre-filled for known providers)
    - SMTP username and password
 
-2. **Set Master Password** (if using encrypted file backend):
+3. **Set Master Password** (if using encrypted file backend):
    - Choose a strong password (minimum 8 characters)
    - Confirm the password
    - This password will be required each time you start TUME
 
-3. **Save Credentials**:
+4. **Save Credentials**:
    - Press `Enter` to save your credentials
    - The backend selection is automatic based on availability
 
-### Credentials Setup View
+### Provider Selection View
+
+When first setting up credentials, you'll see a provider selection screen:
 
 | Key | Action |
 |-----|--------|
-| `Tab`, `j`, `↓` | Navigate to next field |
-| `Shift+Tab`, `k`, `↑` | Navigate to previous field |
-| Type | Enter text in current field |
-| `Backspace` | Delete character |
-| `Left` / `Right` | Move cursor |
+| `j`, `↓` | Navigate to next provider |
+| `k`, `↑` | Navigate to previous provider |
+| `Enter`, `l`, `→` | Select provider and proceed to credential entry |
+| `Esc`, `q` | Cancel setup (quit if first-time) |
+
+### Credentials Field Entry View
+
+After selecting a provider, you'll enter credentials using **vim-style Normal/Insert modes**:
+
+**Normal Mode** (green highlight):
+| Key | Action |
+|-----|--------|
+| `i` | Enter Insert mode to edit current field |
+| `j`, `↓` | Navigate to next field |
+| `k`, `↑` | Navigate to previous field |
+| `Tab` | Navigate to next field |
+| `Shift+Tab` | Navigate to previous field |
+| `h`, `←` | Go back to provider selection (when on first field) |
 | `P` | Toggle password visibility |
 | `Enter` | Save credentials |
-| `Esc` | Cancel setup (quit if first-time) |
+| `Esc`, `q` | Cancel setup |
+
+**Insert Mode** (yellow highlight):
+| Key | Action |
+|-----|--------|
+| Type | Enter text in current field (including `j` and `k` characters) |
+| `Backspace` | Delete character |
+| `Left` / `Right` | Move cursor |
+| `Esc` | Exit Insert mode and return to Normal mode |
+
+This prevents the issue where navigation keys like `j`/`k` would trigger field navigation while trying to type those characters.
 
 ### Unlocking Credentials
 
