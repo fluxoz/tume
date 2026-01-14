@@ -2,6 +2,7 @@ mod app;
 mod credentials;
 mod config;
 mod db;
+mod email_sync;
 mod events;
 mod providers;
 mod ui;

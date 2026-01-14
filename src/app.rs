@@ -194,6 +194,7 @@ pub struct App {
     pub config: Config,
     pub accounts: Vec<DbAccount>,
     pub current_account_id: Option<i64>,
+    pub email_sync_manager: Option<crate::email_sync::EmailSyncManager>,
 }
 
 impl App {
@@ -218,6 +219,7 @@ impl App {
             config: Config::default(),
             accounts: Vec::new(),
             current_account_id: None,
+            email_sync_manager: None,
         }
     }
 
@@ -351,12 +353,13 @@ impl App {
             visual_selections: HashSet::new(),
             visual_anchor: None,
             credentials_manager: Some(credentials_manager),
-            credentials,
+            credentials: credentials.clone(),
             credentials_setup_state,
             credentials_unlock_state,
             config,
             accounts,
             current_account_id,
+            email_sync_manager: Some(crate::email_sync::EmailSyncManager::new(credentials)),
         })
     }
 
@@ -981,6 +984,26 @@ impl App {
         self.should_quit = true;
     }
 
+    /// Attempt to sync emails (stub - shows not implemented message)
+    pub fn attempt_email_sync(&mut self) {
+        if let Some(ref sync_manager) = self.email_sync_manager {
+            if sync_manager.is_configured() {
+                self.status_message = Some(
+                    "Email sync not yet implemented. IMAP/SMTP integration coming soon. \
+                    Currently displaying mock data. See project issues for implementation status.".to_string()
+                );
+            } else {
+                self.status_message = Some(
+                    "No credentials configured. Please set up email credentials first.".to_string()
+                );
+            }
+        } else {
+            self.status_message = Some(
+                "Email sync not available. Please restart the app after configuring credentials.".to_string()
+            );
+        }
+    }
+
     pub fn get_selected_email(&self) -> Option<&Email> {
         self.emails.get(self.selected_index)
     }
@@ -1316,7 +1339,7 @@ impl App {
                         self.status_message = Some(format!("Warning: Failed to save config: {}", e));
                     } else {
                         // Sync to database
-                        if let Some(ref db) = self.db {
+                        if let Some(ref _db) = self.db {
                             let db_account = crate::db::DbAccount {
                                 id: 0,
                                 name: account.name.clone(),
@@ -1337,8 +1360,12 @@ impl App {
                 
                 self.credentials_setup_state = None;
                 self.current_view = View::InboxList;
+                
+                // Initialize email sync manager with credentials
+                self.email_sync_manager = Some(crate::email_sync::EmailSyncManager::new(Some(credentials)));
+                
                 self.status_message = Some(format!(
-                    "Credentials and account configuration saved successfully using {}",
+                    "Credentials and account configuration saved successfully using {}. Email sync not yet implemented - using mock data.",
                     manager.backend().as_str()
                 ));
             }
@@ -1897,6 +1924,7 @@ mod tests {
             config: Config::default(),
             accounts: Vec::new(),
             current_account_id: None,
+            email_sync_manager: None,
         };
 
         // Enter compose mode and add some content
@@ -1971,6 +1999,7 @@ mod tests {
             config: Config::default(),
             accounts: Vec::new(),
             current_account_id: None,
+            email_sync_manager: None,
         };
 
         // Enter compose mode and add some content
