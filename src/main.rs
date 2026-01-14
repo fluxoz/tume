@@ -5,6 +5,7 @@ mod db;
 mod email_sync;
 mod events;
 mod providers;
+mod theme;
 mod ui;
 
 use anyhow::Result;
