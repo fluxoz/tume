@@ -11,12 +11,6 @@ use std::fs;
 use std::path::PathBuf;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-/// Service name for keyring storage
-const SERVICE_NAME: &str = "tume-email-client";
-
-/// User identifier for keyring storage
-const USERNAME: &str = "default";
-
 /// Represents email server credentials
 #[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct Credentials {
@@ -31,31 +25,20 @@ pub struct Credentials {
 }
 
 /// Backend type for credentials storage
+/// SystemKeyring has been removed - we only use EncryptedFile now for simplicity
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum StorageBackend {
-    /// System keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)
-    SystemKeyring,
-    /// Encrypted file with master password
+    /// Encrypted file with master password at ~/.local/share/tume/credentials.enc
     EncryptedFile,
 }
 
 impl StorageBackend {
     pub fn as_str(&self) -> &str {
-        match self {
-            StorageBackend::SystemKeyring => "System Keyring",
-            StorageBackend::EncryptedFile => "Encrypted File",
-        }
+        "Encrypted File"
     }
 
     pub fn description(&self) -> &str {
-        match self {
-            StorageBackend::SystemKeyring => {
-                "Credentials stored in your system's secure keyring (Keychain/Credential Manager/Secret Service)"
-            }
-            StorageBackend::EncryptedFile => {
-                "Credentials stored in an encrypted file at ~/.local/share/tume/credentials.enc, protected by your master password"
-            }
-        }
+        "Credentials stored in an encrypted file at ~/.local/share/tume/credentials.enc, protected by your master password"
     }
 }
 
@@ -79,9 +62,9 @@ struct EncryptedData {
 }
 
 impl CredentialsManager {
-    /// Create a new credentials manager with automatic backend detection
+    /// Create a new credentials manager - always uses encrypted file storage
     pub fn new() -> Self {
-        let backend = Self::detect_available_backend();
+        let backend = StorageBackend::EncryptedFile;
         let file_path = Self::default_file_path();
         
         let mut debug_log = std::fs::OpenOptions::new()
@@ -93,49 +76,21 @@ impl CredentialsManager {
         if let Some(ref mut log) = debug_log {
             use std::io::Write;
             let _ = writeln!(log, "\n=== CredentialsManager::new() ===");
-            let _ = writeln!(log, "Detected backend: {:?}", backend);
+            let _ = writeln!(log, "Backend: EncryptedFile (only option)");
             let _ = writeln!(log, "File path: {:?}", file_path);
         }
         
         Self { backend, file_path }
     }
 
-    /// Create a credentials manager with a specific backend
-    pub fn with_backend(backend: StorageBackend) -> Self {
-        let file_path = Self::default_file_path();
-        Self { backend, file_path }
+    /// Create a credentials manager with a specific backend (always EncryptedFile now)
+    pub fn with_backend(_backend: StorageBackend) -> Self {
+        Self::new()
     }
 
-    /// Get the currently active backend
+    /// Get the currently active backend (always EncryptedFile)
     pub fn backend(&self) -> StorageBackend {
-        self.backend
-    }
-
-    /// Detect which storage backend is available
-    fn detect_available_backend() -> StorageBackend {
-        // Try to check if system keyring is available
-        if Self::is_keyring_available() {
-            StorageBackend::SystemKeyring
-        } else {
-            StorageBackend::EncryptedFile
-        }
-    }
-
-    /// Check if system keyring is available
-    fn is_keyring_available() -> bool {
-        // Try a test operation to see if keyring is available
-        match keyring::Entry::new(SERVICE_NAME, "test-availability") {
-            Ok(entry) => {
-                // Try to set and delete a test value
-                if entry.set_password("test").is_ok() {
-                    let _ = entry.delete_credential();
-                    true
-                } else {
-                    false
-                }
-            }
-            Err(_) => false,
-        }
+        StorageBackend::EncryptedFile
     }
 
     /// Get the default file path for encrypted credentials
@@ -148,7 +103,7 @@ impl CredentialsManager {
         path
     }
 
-    /// Check if credentials exist in the current backend
+    /// Check if credentials exist (always checks encrypted file)
     pub fn credentials_exist(&self) -> bool {
         let mut debug_log = std::fs::OpenOptions::new()
             .create(true)
@@ -156,68 +111,17 @@ impl CredentialsManager {
             .open("/tmp/tume_debug.log")
             .ok();
         
-        let result = match self.backend {
-            StorageBackend::SystemKeyring => self.keyring_credentials_exist(),
-            StorageBackend::EncryptedFile => {
-                let exists = self.file_path.exists();
-                if let Some(ref mut log) = debug_log {
-                    use std::io::Write;
-                    let _ = writeln!(log, "Checking encrypted file credentials: {:?} exists = {}", self.file_path, exists);
-                }
-                exists
-            },
-        };
-        
+        let exists = self.file_path.exists();
         if let Some(ref mut log) = debug_log {
             use std::io::Write;
-            let _ = writeln!(log, "credentials_exist({:?}) = {}", self.backend, result);
+            let _ = writeln!(log, "Checking encrypted file credentials: {:?} exists = {}", self.file_path, exists);
+            let _ = writeln!(log, "credentials_exist(EncryptedFile) = {}", exists);
         }
         
-        result
+        exists
     }
 
-    /// Check if credentials exist in keyring
-    fn keyring_credentials_exist(&self) -> bool {
-        let mut debug_log = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/tmp/tume_debug.log")
-            .ok();
-        
-        if let Some(ref mut log) = debug_log {
-            use std::io::Write;
-            let _ = writeln!(log, "\n=== keyring_credentials_exist() called ===");
-            let _ = writeln!(log, "SERVICE_NAME: {}", SERVICE_NAME);
-            let _ = writeln!(log, "USERNAME: {}", USERNAME);
-        }
-        
-        match keyring::Entry::new(SERVICE_NAME, USERNAME) {
-            Ok(entry) => {
-                let result = entry.get_password();
-                if let Some(ref mut log) = debug_log {
-                    use std::io::Write;
-                    match &result {
-                        Ok(pw) => {
-                            let _ = writeln!(log, "get_password() succeeded, password length: {}", pw.len());
-                        },
-                        Err(e) => {
-                            let _ = writeln!(log, "get_password() failed: {:?}", e);
-                        }
-                    }
-                }
-                result.is_ok()
-            },
-            Err(e) => {
-                if let Some(ref mut log) = debug_log {
-                    use std::io::Write;
-                    let _ = writeln!(log, "Failed to create keyring entry: {:?}", e);
-                }
-                false
-            }
-        }
-    }
-
-    /// Save credentials using the current backend (with automatic fallback)
+    /// Save credentials (always uses encrypted file now)
     pub fn save_credentials_with_fallback(&mut self, credentials: &Credentials, master_password: Option<&str>) -> Result<()> {
         let mut debug_log = std::fs::OpenOptions::new()
             .create(true)
@@ -228,59 +132,20 @@ impl CredentialsManager {
         if let Some(ref mut log) = debug_log {
             use std::io::Write;
             let _ = writeln!(log, "\n=== save_credentials_with_fallback() called ===");
-            let _ = writeln!(log, "Backend: {:?}", self.backend);
+            let _ = writeln!(log, "Backend: EncryptedFile (only option)");
             let _ = writeln!(log, "File path: {:?}", self.file_path);
             let _ = writeln!(log, "Master password provided: {}", master_password.is_some());
         }
         
-        // Try to save with current backend
-        let result = match self.backend {
-            StorageBackend::SystemKeyring => {
-                // Try saving to keyring
-                let save_result = self.save_to_keyring(credentials);
-                
-                if save_result.is_ok() {
-                    // Verify we can actually retrieve it
-                    if let Some(ref mut log) = debug_log {
-                        use std::io::Write;
-                        let _ = writeln!(log, "Keyring save succeeded, verifying persistence...");
-                    }
-                    
-                    // Sleep briefly to ensure keyring has time to persist
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                    
-                    if !self.keyring_credentials_exist() {
-                        if let Some(ref mut log) = debug_log {
-                            use std::io::Write;
-                            let _ = writeln!(log, "WARNING: Keyring save succeeded but credentials not retrievable!");
-                            let _ = writeln!(log, "Falling back to EncryptedFile backend...");
-                        }
-                        
-                        // Keyring is unreliable, switch to encrypted file
-                        self.backend = StorageBackend::EncryptedFile;
-                        
-                        // Generate a default master password if none provided
-                        let fallback_password = master_password.unwrap_or("tume-default-password");
-                        self.save_to_encrypted_file(credentials, fallback_password)
-                    } else {
-                        save_result
-                    }
-                } else {
-                    save_result
-                }
-            },
-            StorageBackend::EncryptedFile => {
-                let password = master_password
-                    .unwrap_or("tume-default-password"); // Use default if none provided
-                self.save_to_encrypted_file(credentials, password)
-            }
-        };
+        // Use provided master password or default
+        let password = master_password.unwrap_or("tume-default-password");
+        let result = self.save_to_encrypted_file(credentials, password);
         
         if let Some(ref mut log) = debug_log {
             use std::io::Write;
             match &result {
                 Ok(_) => {
-                    let _ = writeln!(log, "Credentials saved successfully with backend: {:?}", self.backend);
+                    let _ = writeln!(log, "Credentials saved successfully to encrypted file");
                     let _ = writeln!(log, "File exists after save: {}", self.file_path.exists());
                 },
                 Err(e) => {
@@ -292,7 +157,7 @@ impl CredentialsManager {
         result
     }
 
-    /// Save credentials using the current backend
+    /// Save credentials using the current backend (always EncryptedFile)
     pub fn save_credentials(&self, credentials: &Credentials, master_password: Option<&str>) -> Result<()> {
         let mut debug_log = std::fs::OpenOptions::new()
             .create(true)
@@ -303,19 +168,13 @@ impl CredentialsManager {
         if let Some(ref mut log) = debug_log {
             use std::io::Write;
             let _ = writeln!(log, "\n=== save_credentials() called ===");
-            let _ = writeln!(log, "Backend: {:?}", self.backend);
+            let _ = writeln!(log, "Backend: EncryptedFile (only option)");
             let _ = writeln!(log, "File path: {:?}", self.file_path);
             let _ = writeln!(log, "Master password provided: {}", master_password.is_some());
         }
         
-        let result = match self.backend {
-            StorageBackend::SystemKeyring => self.save_to_keyring(credentials),
-            StorageBackend::EncryptedFile => {
-                let password = master_password
-                    .ok_or_else(|| anyhow!("Master password required for encrypted file storage"))?;
-                self.save_to_encrypted_file(credentials, password)
-            }
-        };
+        let password = master_password.unwrap_or("tume-default-password");
+        let result = self.save_to_encrypted_file(credentials, password);
         
         if let Some(ref mut log) = debug_log {
             use std::io::Write;
@@ -333,32 +192,19 @@ impl CredentialsManager {
         result
     }
 
-    /// Load credentials using the current backend
+    /// Load credentials (always uses encrypted file)
     pub fn load_credentials(&self, master_password: Option<&str>) -> Result<Credentials> {
-        match self.backend {
-            StorageBackend::SystemKeyring => self.load_from_keyring(),
-            StorageBackend::EncryptedFile => {
-                let password = master_password
-                    .ok_or_else(|| anyhow!("Master password required for encrypted file storage"))?;
-                self.load_from_encrypted_file(password)
-            }
-        }
+        let password = master_password.unwrap_or("tume-default-password");
+        self.load_from_encrypted_file(password)
     }
 
-    /// Delete credentials from the current backend
+    /// Delete credentials (deletes encrypted file)
     pub fn delete_credentials(&self) -> Result<()> {
-        match self.backend {
-            StorageBackend::SystemKeyring => self.delete_from_keyring(),
-            StorageBackend::EncryptedFile => self.delete_encrypted_file(),
-        }
+        self.delete_encrypted_file()
     }
 
     /// Verify master password (for encrypted file backend)
     pub fn verify_master_password(&self, password: &str) -> Result<bool> {
-        if self.backend != StorageBackend::EncryptedFile {
-            return Err(anyhow!("Password verification only available for encrypted file backend"));
-        }
-
         if !self.file_path.exists() {
             return Ok(false);
         }
@@ -378,90 +224,11 @@ impl CredentialsManager {
             .is_ok())
     }
 
-    /// Migrate credentials from one backend to another
-    pub fn migrate_to(&self, target_backend: StorageBackend, 
-                      current_master_password: Option<&str>,
-                      new_master_password: Option<&str>) -> Result<()> {
-        // Load credentials from current backend
-        let credentials = self.load_credentials(current_master_password)?;
-        
-        // Create a new manager with target backend
-        let target_manager = Self::with_backend(target_backend);
-        
-        // Save to target backend
-        target_manager.save_credentials(&credentials, new_master_password)?;
-        
-        // Delete from current backend
-        self.delete_credentials()?;
-        
-        Ok(())
-    }
-
-    // ============ System Keyring Operations ============
-
-    fn save_to_keyring(&self, credentials: &Credentials) -> Result<()> {
-        let mut debug_log = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/tmp/tume_debug.log")
-            .ok();
-        
-        if let Some(ref mut log) = debug_log {
-            use std::io::Write;
-            let _ = writeln!(log, "\n=== save_to_keyring() called ===");
-            let _ = writeln!(log, "SERVICE_NAME: {}", SERVICE_NAME);
-            let _ = writeln!(log, "USERNAME: {}", USERNAME);
-        }
-        
-        let entry = keyring::Entry::new(SERVICE_NAME, USERNAME)
-            .context("Failed to create keyring entry")?;
-        
-        if let Some(ref mut log) = debug_log {
-            use std::io::Write;
-            let _ = writeln!(log, "Keyring entry created successfully");
-        }
-        
-        // Serialize credentials to JSON
-        let json = serde_json::to_string(credentials)
-            .context("Failed to serialize credentials")?;
-        
-        if let Some(ref mut log) = debug_log {
-            use std::io::Write;
-            let _ = writeln!(log, "Credentials serialized to JSON ({} bytes)", json.len());
-        }
-        
-        entry.set_password(&json)
-            .context("Failed to save credentials to keyring")?;
-        
-        if let Some(ref mut log) = debug_log {
-            use std::io::Write;
-            let _ = writeln!(log, "Keyring set_password() succeeded");
-            let _ = writeln!(log, "Verifying: can retrieve password = {}", entry.get_password().is_ok());
-        }
-        
-        Ok(())
-    }
-
-    fn load_from_keyring(&self) -> Result<Credentials> {
-        let entry = keyring::Entry::new(SERVICE_NAME, USERNAME)
-            .context("Failed to create keyring entry")?;
-        
-        let json = entry.get_password()
-            .context("Failed to retrieve credentials from keyring. Please configure credentials first.")?;
-        
-        let credentials: Credentials = serde_json::from_str(&json)
-            .context("Failed to parse credentials from keyring")?;
-        
-        Ok(credentials)
-    }
-
-    fn delete_from_keyring(&self) -> Result<()> {
-        let entry = keyring::Entry::new(SERVICE_NAME, USERNAME)
-            .context("Failed to create keyring entry")?;
-        
-        entry.delete_credential()
-            .context("Failed to delete credentials from keyring")?;
-        
+    /// Migrate credentials - no-op since we only support one backend now
+    pub fn migrate_to(&self, _target_backend: StorageBackend, 
+                      _current_master_password: Option<&str>,
+                      _new_master_password: Option<&str>) -> Result<()> {
+        // Only EncryptedFile is supported, so migration is a no-op
         Ok(())
     }
 
@@ -706,10 +473,7 @@ mod tests {
     #[test]
     fn test_backend_detection() {
         let manager = CredentialsManager::new();
-        // Should select either keyring or encrypted file
-        assert!(
-            manager.backend() == StorageBackend::SystemKeyring 
-            || manager.backend() == StorageBackend::EncryptedFile
-        );
+        // Should always be EncryptedFile now
+        assert_eq!(manager.backend(), StorageBackend::EncryptedFile);
     }
 }

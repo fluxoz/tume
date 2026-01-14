@@ -1322,14 +1322,13 @@ impl App {
         let current_backend = self.credentials_manager
             .as_ref()
             .map(|m| m.backend())
-            .unwrap_or(StorageBackend::SystemKeyring);
+            .unwrap_or(StorageBackend::EncryptedFile);
 
-        // For encrypted file backend, validate master password
-        let master_password = if current_backend == StorageBackend::EncryptedFile {
-            if setup.master_password.is_empty() {
-                self.status_message = Some("Master password is required".to_string());
-                return;
-            }
+        // For encrypted file backend, validate master password (always true now)
+        let master_password = if setup.master_password.is_empty() {
+            // Use default password if none provided
+            None
+        } else {
             if setup.master_password != setup.master_password_confirm {
                 self.status_message = Some("Master passwords do not match".to_string());
                 return;
@@ -1339,8 +1338,6 @@ impl App {
                 return;
             }
             Some(setup.master_password.as_str())
-        } else {
-            None
         };
 
         // Create credentials object
@@ -1364,13 +1361,13 @@ impl App {
         if let Some(ref mut log) = debug_log {
             use std::io::Write;
             let _ = writeln!(log, "\n=== About to call save_credentials_with_fallback() ===");
-            let _ = writeln!(log, "Backend: {:?}", current_backend);
+            let _ = writeln!(log, "Backend: EncryptedFile (only option)");
             let _ = writeln!(log, "IMAP server: {}", credentials.imap_server);
             let _ = writeln!(log, "IMAP username: {}", credentials.imap_username);
             let _ = writeln!(log, "Master password: {:?}", master_password.is_some());
         }
 
-        // Save credentials with automatic fallback
+        // Save credentials to encrypted file
         let manager = match &mut self.credentials_manager {
             Some(m) => m,
             None => return,
