@@ -1,4 +1,5 @@
 mod app;
+mod credentials;
 mod config;
 mod db;
 mod events;
