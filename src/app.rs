@@ -297,17 +297,7 @@ impl App {
         }
 
         // Load emails from database or populate with mock data if dev_mode is enabled
-        let mut db_emails = if let Some(acc_id) = current_account_id {
-            db.get_emails_by_folder_and_account("inbox", Some(acc_id)).await?
-        } else {
-            db.get_emails_by_folder("inbox").await?
-        };
-        
-        // If no emails found for the specific account, try loading all emails
-        // This handles the case where emails exist but don't have an account_id set
-        if db_emails.is_empty() && current_account_id.is_some() {
-            db_emails = db.get_emails_by_folder("inbox").await?;
-        }
+        let db_emails = Self::load_emails_from_db_with_fallback(&db, "inbox", current_account_id).await?;
 
         let emails = if db_emails.is_empty() && dev_mode {
             // Only populate with mock data in dev mode
@@ -1795,6 +1785,29 @@ impl App {
         self.switch_to_account(prev_idx);
     }
 
+    /// Helper method to load emails from database with fallback logic
+    /// If no emails are found for a specific account_id, falls back to loading all emails
+    async fn load_emails_from_db_with_fallback(
+        db: &EmailDatabase,
+        folder: &str,
+        account_id: Option<i64>,
+    ) -> anyhow::Result<Vec<DbEmail>> {
+        // Try to load emails for the specific account
+        let mut db_emails = if let Some(acc_id) = account_id {
+            db.get_emails_by_folder_and_account(folder, Some(acc_id)).await?
+        } else {
+            db.get_emails_by_folder(folder).await?
+        };
+        
+        // If no emails found for the specific account, try loading all emails
+        // This handles the case where emails exist but don't have an account_id set
+        if db_emails.is_empty() && account_id.is_some() {
+            db_emails = db.get_emails_by_folder(folder).await?;
+        }
+        
+        Ok(db_emails)
+    }
+
     /// Reload emails for the current account
     fn reload_emails_for_current_account(&mut self) {
         if let Some(ref db) = self.db {
@@ -1806,20 +1819,7 @@ impl App {
             if let Ok(handle) = runtime {
                 let emails_result = std::thread::spawn(move || {
                     handle.block_on(async {
-                        // Try to load emails for the current account
-                        let mut db_emails = if let Some(acc_id) = account_id {
-                            db_clone.get_emails_by_folder_and_account("inbox", Some(acc_id)).await?
-                        } else {
-                            db_clone.get_emails_by_folder("inbox").await?
-                        };
-                        
-                        // If no emails found for the specific account, try loading all emails
-                        // This handles the case where emails exist but don't have an account_id set
-                        if db_emails.is_empty() && account_id.is_some() {
-                            db_emails = db_clone.get_emails_by_folder("inbox").await?;
-                        }
-                        
-                        Ok::<Vec<crate::db::DbEmail>, anyhow::Error>(db_emails)
+                        Self::load_emails_from_db_with_fallback(&db_clone, "inbox", account_id).await
                     })
                 })
                 .join();
