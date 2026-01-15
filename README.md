@@ -353,6 +353,8 @@ The inbox displays a list of emails with the following information:
 |-----|--------|
 | `j` or `↓` | Move down to next email |
 | `k` or `↑` | Move up to previous email |
+| `gg` | Jump to first email (vim-style) |
+| `G` (Shift+g) | Jump to last email (vim-style) |
 | `Enter` or `l` | Open selected email |
 | `V` (Shift+V) | Enter visual line mode for batch operations |
 | `p` | Toggle preview panel |
@@ -384,6 +386,8 @@ Visual line mode allows you to select multiple emails and perform batch operatio
 |-----|--------|
 | `j` or `↓` | Extend selection down |
 | `k` or `↑` | Extend selection up |
+| `gg` | Jump to first email and extend selection (vim-style) |
+| `G` (Shift+g) | Jump to last email and extend selection (vim-style) |
 | `d` | Delete all selected emails |
 | `a` | Archive all selected emails |
 | `Esc`, `v`, or `V` | Exit visual mode |
@@ -393,6 +397,12 @@ Visual line mode allows you to select multiple emails and perform batch operatio
 2. Press `j` twice to select 3 emails (current + 2 below)
 3. Press `d` to delete all selected emails
 4. Visual mode exits automatically and shows "Deleted 3 emails"
+
+**Workflow Example with gg/G:**
+1. Select an email in the middle of the list
+2. Press `Shift+V` to enter visual mode
+3. Press `G` to extend selection to the last email
+4. Press `a` to archive all selected emails
 
 **Notes:**
 - Selection is always contiguous (from anchor point to cursor position)
