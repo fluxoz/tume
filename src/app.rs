@@ -322,6 +322,7 @@ impl App {
                     folder: "inbox".to_string(),
                     thread_id: None,
                     account_id: current_account_id,
+                    message_id: None, // Mock emails don't have real message IDs
                 };
                 db.insert_email(&db_email).await?;
             }
@@ -1091,14 +1092,41 @@ impl App {
                                 Ok(emails) => {
                                     let count = emails.len();
                                     let mut stored = 0;
-                                    // Store emails in database
+                                    let mut skipped = 0;
+                                    // Store emails in database, checking for duplicates
                                     for mut email in emails {
                                         email.account_id = account_id;
-                                        if db_clone.insert_email(&email).await.is_ok() {
-                                            stored += 1;
+                                        
+                                        // Check if email already exists by message_id
+                                        let should_insert = if let Some(ref msg_id) = email.message_id {
+                                            match db_clone.email_exists_by_message_id(msg_id).await {
+                                                Ok(exists) => !exists,
+                                                Err(e) => {
+                                                    // Log the error but continue with insertion attempt
+                                                    eprintln!("Warning: Failed to check email existence ({}): {}. Will attempt insertion.", msg_id, e);
+                                                    true
+                                                }
+                                            }
+                                        } else {
+                                            // Email lacks Message-ID header - log for monitoring
+                                            eprintln!("Warning: Email '{}' from '{}' has no Message-ID header. Cannot deduplicate.", 
+                                                     email.subject, email.from_address);
+                                            true
+                                        };
+                                        
+                                        if should_insert {
+                                            if db_clone.insert_email(&email).await.is_ok() {
+                                                stored += 1;
+                                            }
+                                        } else {
+                                            skipped += 1;
                                         }
                                     }
-                                    let msg = format!("✓ Sync successful: {} emails fetched, {} stored", count, stored);
+                                    let msg = if skipped > 0 {
+                                        format!("✓ Sync successful: {} emails fetched, {} stored, {} skipped (already exist)", count, stored, skipped)
+                                    } else {
+                                        format!("✓ Sync successful: {} emails fetched, {} stored", count, stored)
+                                    };
                                     eprintln!("{}", msg);
                                     if let Ok(mut result) = sync_result.lock() {
                                         *result = Some(msg);
