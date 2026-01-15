@@ -1592,6 +1592,9 @@ impl App {
                 
                 // Initialize email sync manager with credentials
                 self.email_sync_manager = Some(crate::email_sync::EmailSyncManager::new(Some(credentials)));
+                
+                // Reload emails from database for the current account
+                self.reload_emails_for_current_account();
             }
             Err(e) => {
                 self.status_message = Some(format!("Failed to save credentials: {}", e));
@@ -1674,6 +1677,9 @@ impl App {
                 
                 // Initialize email sync manager with unlocked credentials
                 self.email_sync_manager = Some(crate::email_sync::EmailSyncManager::new(Some(credentials)));
+                
+                // Reload emails from database for the current account
+                self.reload_emails_for_current_account();
             }
             Err(e) => {
                 if let Some(ref mut unlock) = self.credentials_unlock_state {
