@@ -372,11 +372,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     
     // Calculate maximum width available for status message
     let fixed_width = mode_width + mode_spacing + right_width + min_spacing_before_right;
-    let status_max_width = if available_width > fixed_width {
-        available_width - fixed_width
-    } else {
-        0
-    };
+    let status_max_width = available_width.saturating_sub(fixed_width);
     
     // Truncate status message if needed
     let truncated_status = if status_max_width == 0 {
@@ -431,10 +427,10 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     }
     
     // Padding to push right section to the right
-    if padding_width > 0 {
-        spans.push(Span::raw(" ".repeat(padding_width + min_spacing_before_right)));
-    } else {
-        spans.push(Span::raw(" ".repeat(min_spacing_before_right)));
+    // padding_width is the extra space; we always need min_spacing_before_right
+    let total_spacing = padding_width + min_spacing_before_right;
+    if total_spacing > 0 {
+        spans.push(Span::raw(" ".repeat(total_spacing)));
     }
     
     // Right: Metadata
