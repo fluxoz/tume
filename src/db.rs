@@ -942,6 +942,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<test123@example.com>".to_string()),
+            imap_uid: None,
         };
 
         let id = db.insert_email(&email).await.unwrap();
@@ -975,6 +976,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<test1@example.com>".to_string()),
+            imap_uid: None,
         };
 
         let email2 = DbEmail {
@@ -993,6 +995,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<test2@example.com>".to_string()),
+            imap_uid: None,
         };
 
         db.insert_email(&email1).await.unwrap();
@@ -1027,6 +1030,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: None,
+            imap_uid: None,
         };
 
         let id = db.insert_email(&email).await.unwrap();
@@ -1056,6 +1060,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: None,
+            imap_uid: None,
         };
 
         let id = db.insert_email(&email).await.unwrap();
@@ -1108,6 +1113,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: None,
+            imap_uid: None,
         };
 
         let email2 = DbEmail {
@@ -1126,6 +1132,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: None,
+            imap_uid: None,
         };
 
         db.insert_email(&email1).await.unwrap();
@@ -1163,6 +1170,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: None,
+            imap_uid: None,
         };
 
         db.insert_email(&email).await.unwrap();
@@ -1196,6 +1204,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<unique-123@example.com>".to_string()),
+            imap_uid: None,
         };
 
         // Insert the email
@@ -1235,6 +1244,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<msg1@server.com>".to_string()),
+            imap_uid: None,
         };
 
         let email2 = DbEmail {
@@ -1253,6 +1263,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<msg2@server.com>".to_string()),
+            imap_uid: None,
         };
 
         let email3 = DbEmail {
@@ -1271,6 +1282,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<msg3@server.com>".to_string()),
+            imap_uid: None,
         };
 
         db.insert_email(&email1).await.unwrap();
@@ -1312,6 +1324,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<msg4@server.com>".to_string()),
+            imap_uid: None,
         };
 
         let email5 = DbEmail {
@@ -1330,6 +1343,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<msg5@server.com>".to_string()),
+            imap_uid: None,
         };
 
         db.insert_email(&email4).await.unwrap();
