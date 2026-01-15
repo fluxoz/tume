@@ -1185,4 +1185,136 @@ mod tests {
         let emails = db.get_emails_by_folder("inbox").await.unwrap();
         assert_eq!(emails.len(), 1);
     }
+
+    #[tokio::test]
+    async fn test_sync_deduplication_workflow() {
+        let db = create_test_db().await.unwrap();
+
+        // Simulate first sync - insert 3 emails
+        let email1 = DbEmail {
+            id: 0,
+            from_address: "sender1@example.com".to_string(),
+            to_addresses: "me@example.com".to_string(),
+            cc_addresses: None,
+            bcc_addresses: None,
+            subject: "Email 1".to_string(),
+            body: "Body 1".to_string(),
+            preview: "Body 1".to_string(),
+            date: "2026-01-12 12:00".to_string(),
+            status: EmailStatus::Unread,
+            is_flagged: false,
+            folder: "inbox".to_string(),
+            thread_id: None,
+            account_id: None,
+            message_id: Some("<msg1@server.com>".to_string()),
+        };
+
+        let email2 = DbEmail {
+            id: 0,
+            from_address: "sender2@example.com".to_string(),
+            to_addresses: "me@example.com".to_string(),
+            cc_addresses: None,
+            bcc_addresses: None,
+            subject: "Email 2".to_string(),
+            body: "Body 2".to_string(),
+            preview: "Body 2".to_string(),
+            date: "2026-01-12 13:00".to_string(),
+            status: EmailStatus::Unread,
+            is_flagged: false,
+            folder: "inbox".to_string(),
+            thread_id: None,
+            account_id: None,
+            message_id: Some("<msg2@server.com>".to_string()),
+        };
+
+        let email3 = DbEmail {
+            id: 0,
+            from_address: "sender3@example.com".to_string(),
+            to_addresses: "me@example.com".to_string(),
+            cc_addresses: None,
+            bcc_addresses: None,
+            subject: "Email 3".to_string(),
+            body: "Body 3".to_string(),
+            preview: "Body 3".to_string(),
+            date: "2026-01-12 14:00".to_string(),
+            status: EmailStatus::Unread,
+            is_flagged: false,
+            folder: "inbox".to_string(),
+            thread_id: None,
+            account_id: None,
+            message_id: Some("<msg3@server.com>".to_string()),
+        };
+
+        db.insert_email(&email1).await.unwrap();
+        db.insert_email(&email2).await.unwrap();
+        db.insert_email(&email3).await.unwrap();
+
+        let emails = db.get_emails_by_folder("inbox").await.unwrap();
+        assert_eq!(emails.len(), 3);
+
+        // Simulate second sync - try to insert the same emails plus 2 new ones
+        // These should be skipped
+        let exists1 = db.email_exists_by_message_id("<msg1@server.com>").await.unwrap();
+        let exists2 = db.email_exists_by_message_id("<msg2@server.com>").await.unwrap();
+        let exists3 = db.email_exists_by_message_id("<msg3@server.com>").await.unwrap();
+        assert!(exists1);
+        assert!(exists2);
+        assert!(exists3);
+
+        // New emails that don't exist yet
+        let exists4 = db.email_exists_by_message_id("<msg4@server.com>").await.unwrap();
+        let exists5 = db.email_exists_by_message_id("<msg5@server.com>").await.unwrap();
+        assert!(!exists4);
+        assert!(!exists5);
+
+        // Insert only the new emails
+        let email4 = DbEmail {
+            id: 0,
+            from_address: "sender4@example.com".to_string(),
+            to_addresses: "me@example.com".to_string(),
+            cc_addresses: None,
+            bcc_addresses: None,
+            subject: "Email 4".to_string(),
+            body: "Body 4".to_string(),
+            preview: "Body 4".to_string(),
+            date: "2026-01-12 15:00".to_string(),
+            status: EmailStatus::Unread,
+            is_flagged: false,
+            folder: "inbox".to_string(),
+            thread_id: None,
+            account_id: None,
+            message_id: Some("<msg4@server.com>".to_string()),
+        };
+
+        let email5 = DbEmail {
+            id: 0,
+            from_address: "sender5@example.com".to_string(),
+            to_addresses: "me@example.com".to_string(),
+            cc_addresses: None,
+            bcc_addresses: None,
+            subject: "Email 5".to_string(),
+            body: "Body 5".to_string(),
+            preview: "Body 5".to_string(),
+            date: "2026-01-12 16:00".to_string(),
+            status: EmailStatus::Unread,
+            is_flagged: false,
+            folder: "inbox".to_string(),
+            thread_id: None,
+            account_id: None,
+            message_id: Some("<msg5@server.com>".to_string()),
+        };
+
+        db.insert_email(&email4).await.unwrap();
+        db.insert_email(&email5).await.unwrap();
+
+        // Verify we now have 5 total emails (not 8 which would be if duplicates were allowed)
+        let emails = db.get_emails_by_folder("inbox").await.unwrap();
+        assert_eq!(emails.len(), 5);
+        
+        // Verify all message IDs are unique
+        let message_ids: Vec<_> = emails.iter()
+            .filter_map(|e| e.message_id.as_ref())
+            .collect();
+        assert_eq!(message_ids.len(), 5);
+    }
 }
