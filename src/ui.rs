@@ -362,7 +362,8 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     let right_section = right_section_parts.join(" │ ");
     
     // Calculate available width (area width minus borders)
-    let available_width = area.width.saturating_sub(4) as usize; // 2 chars for left border, 2 for right
+    // The footer block has borders on all 4 sides: 2 chars left border, 2 chars right border
+    let available_width = area.width.saturating_sub(4) as usize;
     
     // Calculate fixed widths
     let mode_width = mode_text.len();
@@ -379,6 +380,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
         String::new()
     } else if status_text.len() > status_max_width {
         // Safely truncate at character boundary
+        // Reserve 3 characters for the ellipsis "..."
         let mut end = status_max_width.saturating_sub(3).max(1);
         // Ensure we're at a character boundary
         while end > 0 && !status_text.is_char_boundary(end) {
@@ -427,7 +429,8 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     }
     
     // Padding to push right section to the right
-    // padding_width is the extra space; we always need min_spacing_before_right
+    // Note: padding_width was calculated by subtracting min_spacing_before_right (line 404),
+    // so we add it back here to get the actual total spacing needed
     let total_spacing = padding_width + min_spacing_before_right;
     if total_spacing > 0 {
         spans.push(Span::raw(" ".repeat(total_spacing)));
