@@ -55,6 +55,7 @@ pub struct DbEmail {
     pub thread_id: Option<String>,
     pub account_id: Option<i64>,
     pub message_id: Option<String>,
+    pub imap_uid: Option<u32>,
 }
 
 /// Database representation of a draft email
@@ -270,6 +271,18 @@ impl EmailDatabase {
                 .context("Failed to add message_id to emails table")?;
         }
 
+        // Add imap_uid column to emails if it doesn't exist (migration for remote delete support)
+        let imap_uid_column_exists = self.check_column_exists("emails", "imap_uid").await?;
+        if !imap_uid_column_exists {
+            self.conn
+                .execute(
+                    "ALTER TABLE emails ADD COLUMN imap_uid INTEGER",
+                    (),
+                )
+                .await
+                .context("Failed to add imap_uid to emails table")?;
+        }
+
         // Create indexes for better query performance
         self.conn
             .execute(
@@ -310,6 +323,14 @@ impl EmailDatabase {
             )
             .await
             .context("Failed to create message_id index")?;
+
+        self.conn
+            .execute(
+                "CREATE INDEX IF NOT EXISTS idx_emails_imap_uid ON emails(imap_uid)",
+                (),
+            )
+            .await
+            .context("Failed to create imap_uid index")?;
 
         // Initialize default folders if they don't exist
         self.initialize_default_folders().await?;
@@ -374,8 +395,8 @@ impl EmailDatabase {
                 "INSERT INTO emails (
                     from_address, to_addresses, cc_addresses, bcc_addresses, 
                     subject, body, preview, date, status, is_flagged, 
-                    folder, thread_id, account_id, message_id
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                    folder, thread_id, account_id, message_id, imap_uid
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 libsql::params![
                     email.from_address.as_str(),
                     email.to_addresses.as_str(),
@@ -391,6 +412,7 @@ impl EmailDatabase {
                     email.thread_id.as_deref(),
                     email.account_id,
                     email.message_id.as_deref(),
+                    email.imap_uid,
                 ],
             )
             .await
@@ -405,7 +427,7 @@ impl EmailDatabase {
             .conn
             .query(
                 "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
-                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id
+                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id, imap_uid
                  FROM emails
                  WHERE folder = ?1 AND status != 'deleted'
                  ORDER BY date DESC",
@@ -432,6 +454,7 @@ impl EmailDatabase {
                 thread_id: row.get(12)?,
                 account_id: row.get(13)?,
                 message_id: row.get(14)?,
+                imap_uid: row.get(15)?,
             });
         }
 
@@ -444,7 +467,7 @@ impl EmailDatabase {
             .conn
             .query(
                 "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
-                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id
+                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id, imap_uid
                  FROM emails
                  WHERE id = ?1",
                 libsql::params![id],
@@ -469,6 +492,7 @@ impl EmailDatabase {
                 thread_id: row.get(12)?,
                 account_id: row.get(13)?,
                 message_id: row.get(14)?,
+                imap_uid: row.get(15)?,
             }))
         } else {
             Ok(None)
@@ -644,7 +668,7 @@ impl EmailDatabase {
             .conn
             .query(
                 "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
-                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id
+                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id, imap_uid
                  FROM emails
                  WHERE (subject LIKE ?1 OR body LIKE ?1 OR from_address LIKE ?1)
                    AND status != 'deleted'
@@ -672,6 +696,7 @@ impl EmailDatabase {
                 thread_id: row.get(12)?,
                 account_id: row.get(13)?,
                 message_id: row.get(14)?,
+                imap_uid: row.get(15)?,
             });
         }
 
@@ -682,13 +707,13 @@ impl EmailDatabase {
     pub async fn get_emails_by_folder_and_account(&self, folder: &str, account_id: Option<i64>) -> Result<Vec<DbEmail>> {
         let query = if account_id.is_some() {
             "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
-                    subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id
+                    subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id, imap_uid
              FROM emails
              WHERE folder = ?1 AND account_id = ?2 AND status != 'deleted'
              ORDER BY date DESC"
         } else {
             "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
-                    subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id
+                    subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id, imap_uid
              FROM emails
              WHERE folder = ?1 AND account_id IS NULL AND status != 'deleted'
              ORDER BY date DESC"
@@ -724,6 +749,7 @@ impl EmailDatabase {
                 thread_id: row.get(12)?,
                 account_id: row.get(13)?,
                 message_id: row.get(14)?,
+                imap_uid: row.get(15)?,
             });
         }
 
@@ -916,6 +942,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<test123@example.com>".to_string()),
+            imap_uid: None,
         };
 
         let id = db.insert_email(&email).await.unwrap();
@@ -949,6 +976,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<test1@example.com>".to_string()),
+            imap_uid: None,
         };
 
         let email2 = DbEmail {
@@ -967,6 +995,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<test2@example.com>".to_string()),
+            imap_uid: None,
         };
 
         db.insert_email(&email1).await.unwrap();
@@ -1001,6 +1030,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: None,
+            imap_uid: None,
         };
 
         let id = db.insert_email(&email).await.unwrap();
@@ -1030,6 +1060,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: None,
+            imap_uid: None,
         };
 
         let id = db.insert_email(&email).await.unwrap();
@@ -1082,6 +1113,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: None,
+            imap_uid: None,
         };
 
         let email2 = DbEmail {
@@ -1100,6 +1132,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: None,
+            imap_uid: None,
         };
 
         db.insert_email(&email1).await.unwrap();
@@ -1137,6 +1170,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: None,
+            imap_uid: None,
         };
 
         db.insert_email(&email).await.unwrap();
@@ -1170,6 +1204,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<unique-123@example.com>".to_string()),
+            imap_uid: None,
         };
 
         // Insert the email
@@ -1209,6 +1244,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<msg1@server.com>".to_string()),
+            imap_uid: None,
         };
 
         let email2 = DbEmail {
@@ -1227,6 +1263,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<msg2@server.com>".to_string()),
+            imap_uid: None,
         };
 
         let email3 = DbEmail {
@@ -1245,6 +1282,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<msg3@server.com>".to_string()),
+            imap_uid: None,
         };
 
         db.insert_email(&email1).await.unwrap();
@@ -1286,6 +1324,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<msg4@server.com>".to_string()),
+            imap_uid: None,
         };
 
         let email5 = DbEmail {
@@ -1304,6 +1343,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: Some("<msg5@server.com>".to_string()),
+            imap_uid: None,
         };
 
         db.insert_email(&email4).await.unwrap();
