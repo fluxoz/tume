@@ -10,18 +10,21 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use zeroize::{Zeroize, ZeroizeOnDrop};
+use crate::providers::SecurityType;
 
 /// Represents email server credentials
-#[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Serialize, Deserialize, Zeroize, ZeroizeOnDrop, Clone, Debug)]
 pub struct Credentials {
     pub imap_server: String,
     pub imap_port: u16,
     pub imap_username: String,
     pub imap_password: String,
+    pub imap_security: SecurityType,
     pub smtp_server: String,
     pub smtp_port: u16,
     pub smtp_username: String,
     pub smtp_password: String,
+    pub smtp_security: SecurityType,
 }
 
 /// Backend type for credentials storage
@@ -374,15 +377,18 @@ mod tests {
     use super::*;
 
     fn create_test_credentials() -> Credentials {
+        use crate::providers::SecurityType;
         Credentials {
             imap_server: "imap.example.com".to_string(),
             imap_port: 993,
             imap_username: "user@example.com".to_string(),
             imap_password: "imap_secret".to_string(),
+            imap_security: SecurityType::Tls,
             smtp_server: "smtp.example.com".to_string(),
             smtp_port: 587,
             smtp_username: "user@example.com".to_string(),
             smtp_password: "smtp_secret".to_string(),
+            smtp_security: SecurityType::StartTls,
         }
     }
 
