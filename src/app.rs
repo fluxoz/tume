@@ -1510,7 +1510,7 @@ impl App {
                 
                 if config_saved {
                     self.status_message = Some(format!(
-                        "Credentials and account configuration saved successfully using {}. Email sync not yet implemented - using mock data.",
+                        "Credentials and account configuration saved successfully using {}. Press 's' to sync emails.",
                         manager.backend().as_str()
                     ));
                 } else {
