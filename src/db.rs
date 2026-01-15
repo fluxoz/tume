@@ -54,6 +54,7 @@ pub struct DbEmail {
     pub folder: String,
     pub thread_id: Option<String>,
     pub account_id: Option<i64>,
+    pub message_id: Option<String>,
 }
 
 /// Database representation of a draft email
@@ -134,6 +135,7 @@ impl EmailDatabase {
                     is_flagged INTEGER NOT NULL DEFAULT 0,
                     folder TEXT NOT NULL DEFAULT 'inbox',
                     thread_id TEXT,
+                    message_id TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )",
@@ -256,6 +258,18 @@ impl EmailDatabase {
                 .context("Failed to add account_id to drafts table")?;
         }
 
+        // Add message_id column to emails if it doesn't exist (migration for deduplication)
+        let message_id_column_exists = self.check_column_exists("emails", "message_id").await?;
+        if !message_id_column_exists {
+            self.conn
+                .execute(
+                    "ALTER TABLE emails ADD COLUMN message_id TEXT",
+                    (),
+                )
+                .await
+                .context("Failed to add message_id to emails table")?;
+        }
+
         // Create indexes for better query performance
         self.conn
             .execute(
@@ -288,6 +302,14 @@ impl EmailDatabase {
             )
             .await
             .context("Failed to create account_id index")?;
+
+        self.conn
+            .execute(
+                "CREATE INDEX IF NOT EXISTS idx_emails_message_id ON emails(message_id)",
+                (),
+            )
+            .await
+            .context("Failed to create message_id index")?;
 
         // Initialize default folders if they don't exist
         self.initialize_default_folders().await?;
@@ -350,8 +372,8 @@ impl EmailDatabase {
         self.conn
             .execute(
                 "INSERT INTO emails (from_address, to_addresses, cc_addresses, bcc_addresses, 
-                                     subject, body, preview, date, status, is_flagged, folder, thread_id, account_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                                     subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 libsql::params![
                     email.from_address.as_str(),
                     email.to_addresses.as_str(),
@@ -366,6 +388,7 @@ impl EmailDatabase {
                     email.folder.as_str(),
                     email.thread_id.as_deref(),
                     email.account_id,
+                    email.message_id.as_deref(),
                 ],
             )
             .await
@@ -380,7 +403,7 @@ impl EmailDatabase {
             .conn
             .query(
                 "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
-                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id
+                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id
                  FROM emails
                  WHERE folder = ?1 AND status != 'deleted'
                  ORDER BY date DESC",
@@ -406,6 +429,7 @@ impl EmailDatabase {
                 folder: row.get(11)?,
                 thread_id: row.get(12)?,
                 account_id: row.get(13)?,
+                message_id: row.get(14)?,
             });
         }
 
@@ -418,7 +442,7 @@ impl EmailDatabase {
             .conn
             .query(
                 "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
-                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id
+                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id
                  FROM emails
                  WHERE id = ?1",
                 libsql::params![id],
@@ -442,6 +466,7 @@ impl EmailDatabase {
                 folder: row.get(11)?,
                 thread_id: row.get(12)?,
                 account_id: row.get(13)?,
+                message_id: row.get(14)?,
             }))
         } else {
             Ok(None)
@@ -617,7 +642,7 @@ impl EmailDatabase {
             .conn
             .query(
                 "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
-                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id
+                        subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id
                  FROM emails
                  WHERE (subject LIKE ?1 OR body LIKE ?1 OR from_address LIKE ?1)
                    AND status != 'deleted'
@@ -644,6 +669,7 @@ impl EmailDatabase {
                 folder: row.get(11)?,
                 thread_id: row.get(12)?,
                 account_id: row.get(13)?,
+                message_id: row.get(14)?,
             });
         }
 
@@ -654,13 +680,13 @@ impl EmailDatabase {
     pub async fn get_emails_by_folder_and_account(&self, folder: &str, account_id: Option<i64>) -> Result<Vec<DbEmail>> {
         let query = if account_id.is_some() {
             "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
-                    subject, body, preview, date, status, is_flagged, folder, thread_id, account_id
+                    subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id
              FROM emails
              WHERE folder = ?1 AND account_id = ?2 AND status != 'deleted'
              ORDER BY date DESC"
         } else {
             "SELECT id, from_address, to_addresses, cc_addresses, bcc_addresses,
-                    subject, body, preview, date, status, is_flagged, folder, thread_id, account_id
+                    subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id
              FROM emails
              WHERE folder = ?1 AND account_id IS NULL AND status != 'deleted'
              ORDER BY date DESC"
@@ -695,6 +721,7 @@ impl EmailDatabase {
                 folder: row.get(11)?,
                 thread_id: row.get(12)?,
                 account_id: row.get(13)?,
+                message_id: row.get(14)?,
             });
         }
 
@@ -821,6 +848,26 @@ impl EmailDatabase {
 
         Ok(())
     }
+
+    /// Check if an email with the given message_id already exists
+    /// Returns true if the email exists (to prevent duplicates during sync)
+    pub async fn email_exists_by_message_id(&self, message_id: &str) -> Result<bool> {
+        let mut rows = self
+            .conn
+            .query(
+                "SELECT COUNT(*) FROM emails WHERE message_id = ?1",
+                libsql::params![message_id],
+            )
+            .await
+            .context("Failed to check email existence")?;
+
+        if let Some(row) = rows.next().await? {
+            let count: i64 = row.get(0)?;
+            Ok(count > 0)
+        } else {
+            Ok(false)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -866,6 +913,7 @@ mod tests {
             folder: "inbox".to_string(),
             thread_id: None,
             account_id: None,
+            message_id: Some("<test123@example.com>".to_string()),
         };
 
         let id = db.insert_email(&email).await.unwrap();
@@ -876,6 +924,7 @@ mod tests {
         let retrieved = retrieved.unwrap();
         assert_eq!(retrieved.from_address, "test@example.com");
         assert_eq!(retrieved.subject, "Test Subject");
+        assert_eq!(retrieved.message_id, Some("<test123@example.com>".to_string()));
     }
 
     #[tokio::test]
@@ -897,6 +946,7 @@ mod tests {
             folder: "inbox".to_string(),
             thread_id: None,
             account_id: None,
+            message_id: Some("<test1@example.com>".to_string()),
         };
 
         let email2 = DbEmail {
@@ -914,6 +964,7 @@ mod tests {
             folder: "sent".to_string(),
             thread_id: None,
             account_id: None,
+            message_id: Some("<test2@example.com>".to_string()),
         };
 
         db.insert_email(&email1).await.unwrap();
@@ -947,6 +998,7 @@ mod tests {
             folder: "inbox".to_string(),
             thread_id: None,
             account_id: None,
+            message_id: None,
         };
 
         let id = db.insert_email(&email).await.unwrap();
@@ -975,6 +1027,7 @@ mod tests {
             folder: "inbox".to_string(),
             thread_id: None,
             account_id: None,
+            message_id: None,
         };
 
         let id = db.insert_email(&email).await.unwrap();
@@ -1026,6 +1079,7 @@ mod tests {
             folder: "inbox".to_string(),
             thread_id: None,
             account_id: None,
+            message_id: None,
         };
 
         let email2 = DbEmail {
@@ -1043,6 +1097,7 @@ mod tests {
             folder: "inbox".to_string(),
             thread_id: None,
             account_id: None,
+            message_id: None,
         };
 
         db.insert_email(&email1).await.unwrap();
@@ -1079,6 +1134,7 @@ mod tests {
             folder: "inbox".to_string(),
             thread_id: None,
             account_id: None,
+            message_id: None,
         };
 
         db.insert_email(&email).await.unwrap();
@@ -1089,5 +1145,44 @@ mod tests {
         db.clear_inbox().await.unwrap();
         let emails = db.get_emails_by_folder("inbox").await.unwrap();
         assert_eq!(emails.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_email_deduplication_by_message_id() {
+        let db = create_test_db().await.unwrap();
+
+        // Create an email with a message_id
+        let email1 = DbEmail {
+            id: 0,
+            from_address: "test@example.com".to_string(),
+            to_addresses: "me@example.com".to_string(),
+            cc_addresses: None,
+            bcc_addresses: None,
+            subject: "Test Email".to_string(),
+            body: "Body".to_string(),
+            preview: "Body".to_string(),
+            date: "2026-01-12 12:00".to_string(),
+            status: EmailStatus::Unread,
+            is_flagged: false,
+            folder: "inbox".to_string(),
+            thread_id: None,
+            account_id: None,
+            message_id: Some("<unique-123@example.com>".to_string()),
+        };
+
+        // Insert the email
+        db.insert_email(&email1).await.unwrap();
+        
+        // Check that it exists
+        let exists = db.email_exists_by_message_id("<unique-123@example.com>").await.unwrap();
+        assert!(exists);
+        
+        // Check that another message_id doesn't exist
+        let not_exists = db.email_exists_by_message_id("<different-456@example.com>").await.unwrap();
+        assert!(!not_exists);
+        
+        // Verify only one email in inbox
+        let emails = db.get_emails_by_folder("inbox").await.unwrap();
+        assert_eq!(emails.len(), 1);
     }
 }

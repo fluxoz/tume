@@ -250,6 +250,9 @@ impl ImapClient {
                 format!("timestamp: {}", timestamp)
             });
 
+        // Extract Message-ID header for deduplication
+        let message_id = parsed.message_id().map(|id| id.to_string());
+
         // Check if message is unread
         let is_unread = !flags.iter().any(|f| matches!(f, imap::types::Flag::Seen));
         let is_flagged = flags.iter().any(|f| matches!(f, imap::types::Flag::Flagged));
@@ -269,6 +272,7 @@ impl ImapClient {
             folder: folder.to_lowercase(), // Normalize folder name to lowercase
             thread_id: None,
             account_id: None,
+            message_id,
         })
     }
 
@@ -627,6 +631,7 @@ mod tests {
             folder: "inbox".to_string(),
             thread_id: None,
             account_id: None,
+            message_id: None,
         }
     }
 
