@@ -389,7 +389,7 @@ impl ImapClient {
             let uid_str = uid.to_string();
             match session.uid_store(&uid_str, "+FLAGS (\\Deleted)") {
                 Ok(_) => {
-                    eprintln!("Marked UID {} as deleted", uid);
+                    // Successfully marked as deleted
                 }
                 Err(e) => {
                     eprintln!("Failed to mark UID {} as deleted: {}", uid, e);
