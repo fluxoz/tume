@@ -153,8 +153,8 @@ impl ImapClient {
         session.select(folder)
             .context(format!("Failed to select folder: {}", folder))?;
 
-        // Search for all messages
-        let message_ids = session.search("ALL")
+        // Search for all messages (using UID SEARCH)
+        let message_ids = session.uid_search("ALL")
             .context("Failed to search messages")?;
 
         // Convert HashSet to Vec and limit results if requested
@@ -170,16 +170,16 @@ impl ImapClient {
 
         let mut emails = Vec::new();
 
-        // Fetch each message
-        for msg_id in message_ids {
-            match session.fetch(msg_id.to_string(), "(FLAGS RFC822)") {
+        // Fetch each message by UID
+        for uid in message_ids {
+            match session.uid_fetch(uid.to_string(), "(FLAGS RFC822)") {
                 Ok(messages) => {
                     for fetch in messages.iter() {
                         if let Some(body) = fetch.body() {
-                            match Self::parse_email(body, fetch.flags(), folder) {
+                            match Self::parse_email(body, fetch.flags(), folder, Some(uid)) {
                                 Ok(email) => emails.push(email),
                                 Err(e) => {
-                                    eprintln!("Failed to parse email {}: {}", msg_id, e);
+                                    eprintln!("Failed to parse email UID {}: {}", uid, e);
                                     continue;
                                 }
                             }
@@ -187,7 +187,7 @@ impl ImapClient {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to fetch message {}: {}", msg_id, e);
+                    eprintln!("Failed to fetch message UID {}: {}", uid, e);
                     continue;
                 }
             }
@@ -200,7 +200,7 @@ impl ImapClient {
     }
 
     /// Parse email from raw RFC822 bytes
-    fn parse_email(body: &[u8], flags: &[imap::types::Flag], folder: &str) -> Result<DbEmail> {
+    fn parse_email(body: &[u8], flags: &[imap::types::Flag], folder: &str, imap_uid: Option<u32>) -> Result<DbEmail> {
         let parsed = mail_parser::MessageParser::default()
             .parse(body)
             .ok_or_else(|| anyhow!("Failed to parse email"))?;
@@ -273,6 +273,7 @@ impl ImapClient {
             thread_id: None,
             account_id: None,
             message_id,
+            imap_uid,
         })
     }
 
@@ -319,6 +320,92 @@ impl ImapClient {
         })
         .await
         .context("Task join error")?
+    }
+
+    /// Delete emails on IMAP server by UIDs
+    /// This marks the emails as \Deleted and expunges them from the folder
+    pub async fn delete_emails(&self, folder: &str, uids: &[u32]) -> Result<()> {
+        if uids.is_empty() {
+            return Ok(());
+        }
+
+        let credentials = self.credentials.clone();
+        let folder = folder.to_string();
+        let uids = uids.to_vec();
+        
+        tokio::task::spawn_blocking(move || {
+            Self::delete_emails_blocking(&credentials, &folder, &uids)
+        })
+        .await
+        .context("Task join error")?
+    }
+
+    /// Blocking IMAP delete implementation
+    fn delete_emails_blocking(
+        credentials: &Credentials,
+        folder: &str,
+        uids: &[u32],
+    ) -> Result<()> {
+        use crate::providers::SecurityType;
+        
+        // Connect to IMAP server
+        let domain = &credentials.imap_server;
+        let port = credentials.imap_port;
+        
+        let is_localhost = domain == "127.0.0.1" || domain == "localhost";
+        
+        let mut tls_builder = native_tls::TlsConnector::builder();
+        if is_localhost {
+            tls_builder.danger_accept_invalid_certs(true);
+            tls_builder.danger_accept_invalid_hostnames(true);
+        }
+        
+        let tls = tls_builder
+            .build()
+            .context("Failed to build TLS connector")?;
+        
+        let client = match credentials.imap_security {
+            SecurityType::Tls => {
+                imap::connect((domain.as_str(), port), domain, &tls)
+                    .context(format!("Failed to connect to {}:{} with TLS", domain, port))?
+            }
+            SecurityType::StartTls => {
+                imap::connect_starttls((domain.as_str(), port), domain, &tls)
+                    .context(format!("Failed to connect to {}:{} with STARTTLS", domain, port))?
+            }
+        };
+
+        // Login
+        let mut session = client
+            .login(&credentials.imap_username, &credentials.imap_password)
+            .map_err(|e| anyhow!("IMAP login failed: {:?}", e.0))?;
+
+        // Select mailbox
+        session.select(folder)
+            .context(format!("Failed to select folder: {}", folder))?;
+
+        // Mark emails as deleted using UID STORE
+        for uid in uids {
+            let uid_str = uid.to_string();
+            match session.uid_store(&uid_str, "+FLAGS (\\Deleted)") {
+                Ok(_) => {
+                    eprintln!("Marked UID {} as deleted", uid);
+                }
+                Err(e) => {
+                    eprintln!("Failed to mark UID {} as deleted: {}", uid, e);
+                    // Continue with other UIDs even if one fails
+                }
+            }
+        }
+
+        // Expunge to permanently delete marked emails
+        session.expunge()
+            .context("Failed to expunge deleted emails")?;
+
+        // Logout
+        session.logout().ok();
+
+        Ok(())
     }
 
     /// Sync a specific folder
@@ -632,6 +719,7 @@ mod tests {
             thread_id: None,
             account_id: None,
             message_id: None,
+            imap_uid: None,
         }
     }
 

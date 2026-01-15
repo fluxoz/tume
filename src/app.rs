@@ -323,6 +323,7 @@ impl App {
                     thread_id: None,
                     account_id: current_account_id,
                     message_id: None, // Mock emails don't have real message IDs
+                    imap_uid: None, // Mock emails don't have IMAP UIDs
                 };
                 db.insert_email(&db_email).await?;
             }
@@ -560,6 +561,22 @@ impl App {
                     let email_id = email.id;
                     let email_subject = email.subject.clone();
                     
+                    // Get IMAP UID for remote deletion (must happen before removal from UI)
+                    let imap_uid = if let Some(ref db) = self.db {
+                        let db_clone = db.clone();
+                        // Blocking fetch of UID from database
+                        std::thread::spawn(move || {
+                            tokio::runtime::Handle::current().block_on(async {
+                                db_clone.get_email_by_id(email_id).await
+                                    .ok()
+                                    .flatten()
+                                    .and_then(|e| e.imap_uid)
+                            })
+                        }).join().ok().flatten()
+                    } else {
+                        None
+                    };
+                    
                     // Delete from database if available
                     // Note: Using fire-and-forget pattern as this is a background operation.
                     // The UI state is updated immediately for responsiveness. If the database
@@ -571,6 +588,18 @@ impl App {
                                 eprintln!("Failed to delete email from database: {}", e);
                             }
                         });
+                    }
+                    
+                    // Delete from remote IMAP server if UID is available
+                    if let (Some(uid), Some(sync_manager)) = (imap_uid, &self.email_sync_manager) {
+                        if let Some(imap_client) = sync_manager.imap_client() {
+                            let imap_client = imap_client.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = imap_client.delete_emails("INBOX", &[uid]).await {
+                                    eprintln!("Failed to delete email from IMAP server: {}", e);
+                                }
+                            });
+                        }
                     }
                     
                     // Remove email from the vector
@@ -1004,11 +1033,36 @@ impl App {
         let mut indices: Vec<usize> = self.visual_selections.iter().copied().collect();
         indices.sort_by(|a, b| b.cmp(a)); // Sort descending
 
-        // Collect email IDs and perform database operations
+        // Collect email IDs and IMAP UIDs for deletion
         let mut email_ids = Vec::new();
+        let mut imap_uids = Vec::new();
         for &index in &indices {
             if let Some(email) = self.emails.get(index) {
                 email_ids.push(email.id);
+            }
+        }
+
+        // Get IMAP UIDs from database for remote deletion
+        if matches!(action, Action::Delete) {
+            if let Some(ref db) = self.db {
+                let db_clone = db.clone();
+                let email_ids_clone = email_ids.clone();
+                // Fetch UIDs in blocking manner for immediate use
+                if let Ok(uids) = std::thread::spawn(move || {
+                    tokio::runtime::Handle::current().block_on(async {
+                        let mut uids = Vec::new();
+                        for id in email_ids_clone {
+                            if let Ok(Some(email)) = db_clone.get_email_by_id(id).await {
+                                if let Some(uid) = email.imap_uid {
+                                    uids.push(uid);
+                                }
+                            }
+                        }
+                        uids
+                    })
+                }).join() {
+                    imap_uids = uids;
+                }
             }
         }
 
@@ -1035,6 +1089,20 @@ impl App {
                     });
                 }
                 _ => {}
+            }
+        }
+
+        // Delete from remote IMAP server for batch delete
+        if matches!(action, Action::Delete) && !imap_uids.is_empty() {
+            if let Some(sync_manager) = &self.email_sync_manager {
+                if let Some(imap_client) = sync_manager.imap_client() {
+                    let imap_client = imap_client.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = imap_client.delete_emails("INBOX", &imap_uids).await {
+                            eprintln!("Failed to batch delete emails from IMAP server: {}", e);
+                        }
+                    });
+                }
             }
         }
 
