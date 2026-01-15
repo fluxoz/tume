@@ -378,10 +378,13 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     // Truncate status message if needed
     let truncated_status = if status_max_width == 0 {
         String::new()
+    } else if status_max_width < 4 {
+        // Not enough space for text + ellipsis, just show empty or very short
+        String::new()
     } else if status_text.len() > status_max_width {
         // Safely truncate at character boundary
         // Reserve 3 characters for the ellipsis "..."
-        let mut end = status_max_width.saturating_sub(3).max(1);
+        let mut end = status_max_width.saturating_sub(3);
         // Ensure we're at a character boundary
         while end > 0 && !status_text.is_char_boundary(end) {
             end -= 1;
@@ -429,7 +432,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     }
     
     // Padding to push right section to the right
-    // Note: padding_width was calculated by subtracting min_spacing_before_right (line 404),
+    // Note: padding_width was calculated by subtracting min_spacing_before_right (line 409),
     // so we add it back here to get the actual total spacing needed
     let total_spacing = padding_width + min_spacing_before_right;
     if total_spacing > 0 {
