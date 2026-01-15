@@ -318,122 +318,134 @@ fn render_email_detail(f: &mut Frame, area: Rect, app: &App) {
 fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
     
-    let help_text = match app.current_view {
-        View::InboxList => {
-            if app.visual_mode {
-                "j/k: Extend selection | d: Delete selected | a: Archive selected | Esc: Exit visual mode"
-            } else {
-                "j/k: Navigate | Enter/l: Read | V: Visual mode | p: Preview | s: Sync | d: Delete | a: Archive | c: Compose | m: Creds | q: Quit"
-            }
-        }
-        View::EmailDetail => {
-            "h/Esc: Back | d: Delete | a: Archive | r: Reply | f: Forward | q: Quit"
-        }
+    // Build mode indicator for left section
+    let (mode_text, mode_bg) = match app.current_view {
+        View::InboxList if app.visual_mode => (" VISUAL ", theme.visual_selection.to_color()),
         View::Compose => {
             if let Some(ref compose) = app.compose_state {
                 match compose.mode {
-                    ComposeMode::Normal => {
-                        "i: Insert | j/k: Navigate | d: Clear | p: Preview | w: Save draft | Esc/q: Exit"
-                    }
-                    ComposeMode::Insert => "Esc: Normal mode | Type to edit field",
+                    ComposeMode::Normal => (" NORMAL ", theme.status_bar_mode.to_color()),
+                    ComposeMode::Insert => (" INSERT ", theme.insert_mode.to_color()),
                 }
             } else {
-                ""
-            }
-        }
-        View::CredentialsSetup => {
-            if let Some(setup) = &app.credentials_setup_state {
-                if setup.provider_selection_mode {
-                    "j/k: Navigate | Enter/l: Select provider | Esc/q: Cancel"
-                } else {
-                    match setup.mode {
-                        crate::app::CredentialsMode::Normal => {
-                            "i: Insert | j/k: Navigate fields | h: Back to providers | P: Toggle passwords | Enter: Save | Esc/q: Cancel"
-                        }
-                        crate::app::CredentialsMode::Insert => {
-                            "Esc: Normal mode | Type to edit field | Left/Right: Move cursor"
-                        }
-                    }
-                }
-            } else {
-                "i: Insert | j/k: Navigate fields | P: Toggle passwords | Enter: Save | Esc: Cancel"
-            }
-        }
-        View::CredentialsUnlock => {
-            "Type master password | Enter: Unlock | Esc: Quit"
-        }
-        View::CredentialsManagement => {
-            "r: Reset credentials | Esc: Back to inbox"
-        }
-    };
-
-    // Build status bar with mode indicator and current theme
-    let mode_text = match app.current_view {
-        View::InboxList if app.visual_mode => " VISUAL LINE ",
-        View::Compose => {
-            if let Some(ref compose) = app.compose_state {
-                match compose.mode {
-                    ComposeMode::Normal => " NORMAL ",
-                    ComposeMode::Insert => " INSERT ",
-                }
-            } else {
-                ""
+                ("", theme.status_bar_mode.to_color())
             }
         }
         View::CredentialsSetup => {
             if let Some(ref setup) = app.credentials_setup_state {
                 match setup.mode {
-                    CredentialsMode::Normal => " NORMAL ",
-                    CredentialsMode::Insert => " INSERT ",
+                    CredentialsMode::Normal => (" NORMAL ", theme.status_bar_mode.to_color()),
+                    CredentialsMode::Insert => (" INSERT ", theme.insert_mode.to_color()),
                 }
             } else {
-                ""
+                ("", theme.status_bar_mode.to_color())
             }
         }
-        _ => "",
+        _ => ("", theme.status_bar_mode.to_color()),
     };
     
-    // Email count indicator
-    let email_count = if app.current_view == View::InboxList {
-        format!(" {} emails ", app.emails.len())
-    } else {
+    // Build middle section: status messages
+    let status_text = app.status_message.as_deref().unwrap_or("");
+    
+    // Build right section: position info, email count, theme
+    let mut right_section_parts = Vec::new();
+    
+    // Show position/total when emails exist, otherwise just show count
+    if app.current_view == View::InboxList && !app.emails.is_empty() {
+        right_section_parts.push(format!("{}/{}", app.selected_index + 1, app.emails.len()));
+    } else if app.current_view == View::InboxList {
+        right_section_parts.push(format!("{}☰", app.emails.len()));
+    }
+    
+    right_section_parts.push(app.theme.name.to_string());
+    
+    let right_section = right_section_parts.join(" │ ");
+    
+    // Calculate available width (area width minus borders)
+    // The footer block has borders on all 4 sides: 2 chars left border, 2 chars right border
+    let available_width = area.width.saturating_sub(4) as usize;
+    
+    // Calculate fixed widths
+    let mode_width = mode_text.len();
+    let mode_spacing = if !mode_text.is_empty() { 1 } else { 0 }; // space after mode
+    let right_width = right_section.len();
+    let min_spacing_before_right = 2; // minimum space before right section
+    
+    // Calculate maximum width available for status message
+    let fixed_width = mode_width + mode_spacing + right_width + min_spacing_before_right;
+    let status_max_width = available_width.saturating_sub(fixed_width);
+    
+    // Truncate status message if needed
+    const MIN_WIDTH_FOR_ELLIPSIS: usize = 4; // Minimum space for at least 1 char + "..."
+    
+    let truncated_status = if status_max_width == 0 {
         String::new()
+    } else if status_max_width < MIN_WIDTH_FOR_ELLIPSIS {
+        // Not enough space for text + ellipsis, just show empty
+        String::new()
+    } else if status_text.len() > status_max_width {
+        // Safely truncate at character boundary
+        // Reserve 3 characters for the ellipsis "..."
+        let mut end = status_max_width.saturating_sub(3);
+        // Ensure we're at a character boundary
+        while end > 0 && !status_text.is_char_boundary(end) {
+            end -= 1;
+        }
+        if end > 0 {
+            format!("{}...", &status_text[..end])
+        } else {
+            String::new()
+        }
+    } else {
+        status_text.to_string()
     };
     
-    // Theme name in footer
-    let theme_indicator = format!(" {} ", app.theme.name);
-
-    let text = if let Some(ref msg) = app.status_message {
-        vec![
-            Line::from(vec![
-                Span::styled(mode_text, 
-                    Style::default()
-                        .bg(theme.status_bar_mode.to_color())
-                        .fg(theme.status_bar.to_color())  // Use status_bar color for better contrast
-                        .add_modifier(Modifier::BOLD)),
-                Span::raw(" "),
-                Span::styled(msg, Style::default().fg(theme.warning.to_color())),
-                Span::raw("  "),
-                Span::styled(email_count, Style::default().fg(theme.text_dim.to_color())),
-                Span::styled(theme_indicator, Style::default().fg(theme.text_dim.to_color())),
-            ]),
-            Line::from(Span::styled(help_text, Style::default().fg(theme.text_dim.to_color()))),
-        ]
-    } else {
-        vec![
-            Line::from(vec![
-                Span::styled(mode_text, 
-                    Style::default()
-                        .bg(theme.status_bar_mode.to_color())
-                        .fg(theme.status_bar.to_color())  // Use status_bar color for better contrast
-                        .add_modifier(Modifier::BOLD)),
-                Span::raw(" "),
-                Span::styled(email_count, Style::default().fg(theme.text_dim.to_color())),
-                Span::styled(theme_indicator, Style::default().fg(theme.text_dim.to_color())),
-            ]),
-            Line::from(Span::styled(help_text, Style::default().fg(theme.text_dim.to_color()))),
-        ]
-    };
+    // Calculate actual content width
+    let status_display_width = truncated_status.len();
+    let left_content_width = mode_width + mode_spacing + status_display_width;
+    
+    // Build the single-line modeline
+    let mut spans = Vec::new();
+    
+    // Left: Mode indicator
+    if !mode_text.is_empty() {
+        spans.push(Span::styled(
+            mode_text,
+            Style::default()
+                .bg(mode_bg)
+                .fg(theme.status_bar.to_color())
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::raw(" "));
+    }
+    
+    // Middle: Status message
+    if !truncated_status.is_empty() {
+        spans.push(Span::styled(
+            truncated_status,
+            Style::default().fg(theme.text_normal.to_color()),
+        ));
+    }
+    
+    // Calculate spacing to push right section to the right
+    // Total width - left content - right section = spacing
+    let spacing = available_width
+        .saturating_sub(left_content_width)
+        .saturating_sub(right_width);
+    
+    // Always add at least min_spacing_before_right
+    let final_spacing = spacing.max(min_spacing_before_right);
+    if final_spacing > 0 {
+        spans.push(Span::raw(" ".repeat(final_spacing)));
+    }
+    
+    // Right: Metadata
+    spans.push(Span::styled(
+        right_section,
+        Style::default().fg(theme.text_dim.to_color()),
+    ));
+    
+    let text = vec![Line::from(spans)];
 
     let footer = Paragraph::new(text)
         .style(Style::default().bg(theme.status_bar.to_color()))
