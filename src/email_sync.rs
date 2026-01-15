@@ -384,19 +384,15 @@ impl ImapClient {
         session.select(folder)
             .context(format!("Failed to select folder: {}", folder))?;
 
-        // Mark emails as deleted using UID STORE
-        for uid in uids {
-            let uid_str = uid.to_string();
-            match session.uid_store(&uid_str, "+FLAGS (\\Deleted)") {
-                Ok(_) => {
-                    // Successfully marked as deleted
-                }
-                Err(e) => {
-                    eprintln!("Failed to mark UID {} as deleted: {}", uid, e);
-                    // Continue with other UIDs even if one fails
-                }
-            }
-        }
+        // Mark emails as deleted using UID STORE in a single batch operation
+        // Convert UIDs to comma-separated string (e.g., "1,2,3")
+        let uid_set: String = uids.iter()
+            .map(|uid| uid.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        
+        session.uid_store(&uid_set, "+FLAGS (\\Deleted)")
+            .context(format!("Failed to mark UIDs {} as deleted", uid_set))?;
 
         // Expunge to permanently delete marked emails
         session.expunge()
