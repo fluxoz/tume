@@ -19,7 +19,7 @@ pub struct EmailProvider {
 }
 
 /// Security/encryption type for connections
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
 pub enum SecurityType {
     /// SSL/TLS (implicit encryption)
     Tls,

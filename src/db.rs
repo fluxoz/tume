@@ -209,6 +209,27 @@ impl EmailDatabase {
             .await
             .context("Failed to create accounts table")?;
 
+        // Create inbox_rules table
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS inbox_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    condition_type TEXT NOT NULL,
+                    condition_value TEXT NOT NULL,
+                    action_type TEXT NOT NULL,
+                    action_value TEXT,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    account_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+                )",
+                (),
+            )
+            .await
+            .context("Failed to create inbox_rules table")?;
+
         // Add account_id column to emails if it doesn't exist (migration)
         // Note: SQLite doesn't support ALTER TABLE ADD COLUMN IF NOT EXISTS directly,
         // so we need to check if the column exists first
@@ -277,7 +298,7 @@ impl EmailDatabase {
     /// Check if a column exists in a table
     async fn check_column_exists(&self, table: &str, column: &str) -> Result<bool> {
         // Whitelist of allowed table names to prevent SQL injection
-        let allowed_tables = ["emails", "drafts", "accounts", "folders", "attachments"];
+        let allowed_tables = ["emails", "drafts", "accounts", "folders", "attachments", "inbox_rules"];
         if !allowed_tables.contains(&table) {
             anyhow::bail!("Invalid table name: {}", table);
         }

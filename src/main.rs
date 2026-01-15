@@ -69,6 +69,9 @@ fn run_app<B: ratatui::backend::Backend>(
     loop {
         terminal.draw(|f| ui::draw(f, app))?;
         events::handle_events(app)?;
+        
+        // Check for completed sync results
+        app.check_sync_result();
 
         if app.should_quit {
             break;

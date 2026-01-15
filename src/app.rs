@@ -4,6 +4,7 @@ use crate::db::{DbAccount, DbDraft, DbEmail, EmailDatabase, EmailStatus as DbEma
 use crate::theme::Theme;
 use std::collections::HashSet;
 use std::fmt;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 pub struct Email {
@@ -100,10 +101,12 @@ pub struct CredentialsSetupState {
     pub imap_port: String,
     pub imap_username: String,
     pub imap_password: String,
+    pub imap_security: crate::providers::SecurityType,
     pub smtp_server: String,
     pub smtp_port: String,
     pub smtp_username: String,
     pub smtp_password: String,
+    pub smtp_security: crate::providers::SecurityType,
     pub master_password: String,
     pub master_password_confirm: String,
     pub current_field: CredentialField,
@@ -122,10 +125,12 @@ impl CredentialsSetupState {
             imap_port: "993".to_string(),
             imap_username: String::new(),
             imap_password: String::new(),
+            imap_security: crate::providers::SecurityType::Tls,
             smtp_server: String::new(),
             smtp_port: "587".to_string(),
             smtp_username: String::new(),
             smtp_password: String::new(),
+            smtp_security: crate::providers::SecurityType::StartTls,
             master_password: String::new(),
             master_password_confirm: String::new(),
             current_field: CredentialField::ImapServer,
@@ -143,8 +148,10 @@ impl CredentialsSetupState {
         self.selected_provider = Some(provider.id.to_string());
         self.imap_server = provider.imap_server.to_string();
         self.imap_port = provider.imap_port.to_string();
+        self.imap_security = provider.imap_security.clone();
         self.smtp_server = provider.smtp_server.to_string();
         self.smtp_port = provider.smtp_port.to_string();
+        self.smtp_security = provider.smtp_security.clone();
         self.provider_selection_mode = false;
     }
 
@@ -197,12 +204,13 @@ pub struct App {
     pub current_account_id: Option<i64>,
     pub email_sync_manager: Option<crate::email_sync::EmailSyncManager>,
     pub theme: Theme,
+    pub last_sync_result: Arc<Mutex<Option<String>>>,
 }
 
 impl App {
     pub fn new() -> Self {
         Self {
-            emails: Self::mock_emails(),
+            emails: Vec::new(),  // Start with empty inbox, real emails loaded from DB
             current_view: View::InboxList,
             selected_index: 0,
             should_quit: false,
@@ -223,6 +231,7 @@ impl App {
             current_account_id: None,
             email_sync_manager: None,
             theme: Theme::default(),
+            last_sync_result: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -285,15 +294,15 @@ impl App {
             db.clear_inbox().await?;
         }
 
-        // Load emails from database or populate with mock data if empty
+        // Load emails from database or populate with mock data if dev_mode is enabled
         let db_emails = if let Some(acc_id) = current_account_id {
             db.get_emails_by_folder_and_account("inbox", Some(acc_id)).await?
         } else {
             db.get_emails_by_folder("inbox").await?
         };
 
-        let emails = if db_emails.is_empty() {
-            // Populate with mock data on first run or after clearing in dev mode
+        let emails = if db_emails.is_empty() && dev_mode {
+            // Only populate with mock data in dev mode
             let mock_emails = Self::mock_emails();
             for email in &mock_emails {
                 let db_email = DbEmail {
@@ -408,6 +417,7 @@ impl App {
             accounts,
             current_account_id,
             email_sync_manager: Some(crate::email_sync::EmailSyncManager::new(credentials)),
+            last_sync_result: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -1032,23 +1042,91 @@ impl App {
         self.should_quit = true;
     }
 
-    /// Attempt to sync emails (stub - shows not implemented message)
+    /// Attempt to sync emails from IMAP server
     pub fn attempt_email_sync(&mut self) {
         if let Some(ref sync_manager) = self.email_sync_manager {
-            if sync_manager.is_configured() {
-                self.status_message = Some(
-                    "Email sync not yet implemented. IMAP/SMTP integration coming soon. \
-                    Currently displaying mock data. See project issues for implementation status.".to_string()
-                );
-            } else {
+            if !sync_manager.is_configured() {
                 self.status_message = Some(
                     "No credentials configured. Please set up email credentials first.".to_string()
                 );
+                return;
+            }
+            
+            if let (Some(db), Some(sync_manager)) = (&self.db, &self.email_sync_manager) {
+                let sync_manager_clone = sync_manager.clone();
+                let db_clone = db.clone();
+                let account_id = self.current_account_id;
+                let sync_result = Arc::clone(&self.last_sync_result);
+                
+                self.status_message = Some("Email sync started. Connecting to server...".to_string());
+                
+                // Spawn background task to fetch and store emails
+                tokio::spawn(async move {
+                    match sync_manager_clone.imap_client() {
+                        Some(client) => {
+                            match client.fetch_emails("INBOX", Some(50)).await {
+                                Ok(emails) => {
+                                    let count = emails.len();
+                                    let mut stored = 0;
+                                    // Store emails in database
+                                    for mut email in emails {
+                                        email.account_id = account_id;
+                                        if db_clone.insert_email(&email).await.is_ok() {
+                                            stored += 1;
+                                        }
+                                    }
+                                    let msg = format!("✓ Sync successful: {} emails fetched, {} stored", count, stored);
+                                    eprintln!("{}", msg);
+                                    if let Ok(mut result) = sync_result.lock() {
+                                        *result = Some(msg);
+                                    }
+                                }
+                                Err(e) => {
+                                    let msg = format!("✗ Sync failed: {}", e);
+                                    eprintln!("{}", msg);
+                                    if let Ok(mut result) = sync_result.lock() {
+                                        *result = Some(msg);
+                                    }
+                                }
+                            }
+                        }
+                        None => {
+                            let msg = "✗ No IMAP client - credentials not loaded".to_string();
+                            eprintln!("{}", msg);
+                            if let Ok(mut result) = sync_result.lock() {
+                                *result = Some(msg);
+                            }
+                        }
+                    }
+                });
+                
+                // Note: Emails will be reloaded automatically when sync completes
+                // via check_sync_result() in the main event loop
             }
         } else {
             self.status_message = Some(
                 "Email sync not available. Please restart the app after configuring credentials.".to_string()
             );
+        }
+    }
+    
+    /// Check and display last sync result
+    pub fn check_sync_result(&mut self) {
+        let should_reload = if let Ok(mut result) = self.last_sync_result.lock() {
+            if let Some(msg) = result.take() {
+                let is_success = msg.starts_with("✓");
+                self.status_message = Some(msg);
+                is_success
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        
+        // Reload emails after releasing the lock
+        if should_reload {
+            self.reload_emails_for_current_account();
         }
     }
 
@@ -1350,10 +1428,12 @@ impl App {
             imap_port,
             imap_username: setup.imap_username.clone(),
             imap_password: setup.imap_password.clone(),
+            imap_security: setup.imap_security,
             smtp_server: setup.smtp_server.clone(),
             smtp_port,
             smtp_username: setup.smtp_username.clone(),
             smtp_password: setup.smtp_password.clone(),
+            smtp_security: setup.smtp_security,
         };
 
         // Debug log before save
@@ -1449,7 +1529,7 @@ impl App {
                 
                 if config_saved {
                     self.status_message = Some(format!(
-                        "Credentials and account configuration saved successfully using {}. Email sync not yet implemented - using mock data.",
+                        "Credentials and account configuration saved successfully using {}. Press 's' to sync emails.",
                         manager.backend().as_str()
                     ));
                 } else {
@@ -1536,10 +1616,13 @@ impl App {
         // Attempt to load credentials
         match manager.load_credentials(Some(&password)) {
             Ok(credentials) => {
-                self.credentials = Some(credentials);
+                self.credentials = Some(credentials.clone());
                 self.credentials_unlock_state = None;
                 self.current_view = View::InboxList;
                 self.status_message = Some("Credentials unlocked successfully".to_string());
+                
+                // Initialize email sync manager with unlocked credentials
+                self.email_sync_manager = Some(crate::email_sync::EmailSyncManager::new(Some(credentials)));
             }
             Err(e) => {
                 if let Some(ref mut unlock) = self.credentials_unlock_state {
@@ -1692,9 +1775,16 @@ impl App {
 mod tests {
     use super::*;
 
+    // Helper function to create an App with mock emails for testing
+    fn new_app_with_mock_emails() -> App {
+        let mut app = App::new();
+        app.emails = App::mock_emails();
+        app
+    }
+
     #[test]
     fn test_app_initialization() {
-        let app = App::new();
+        let app = new_app_with_mock_emails();
         assert_eq!(app.current_view, View::InboxList);
         assert_eq!(app.selected_index, 0);
         assert_eq!(app.should_quit, false);
@@ -1703,7 +1793,7 @@ mod tests {
 
     #[test]
     fn test_navigation() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         assert_eq!(app.selected_index, 0);
 
         app.next_email();
@@ -1725,7 +1815,7 @@ mod tests {
 
     #[test]
     fn test_navigation_bounds() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
 
         // Move to the last email
         for _ in 0..10 {
@@ -1738,7 +1828,7 @@ mod tests {
 
     #[test]
     fn test_view_switching() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         assert_eq!(app.current_view, View::InboxList);
 
         app.open_email();
@@ -1755,7 +1845,7 @@ mod tests {
 
     #[test]
     fn test_actions() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         let initial_count = app.emails.len();
 
         app.perform_action(Action::Delete);
@@ -1783,7 +1873,7 @@ mod tests {
 
     #[test]
     fn test_quit() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         assert_eq!(app.should_quit, false);
 
         app.quit();
@@ -1792,7 +1882,7 @@ mod tests {
 
     #[test]
     fn test_get_selected_email() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
 
         let email = app.get_selected_email();
         assert!(email.is_some());
@@ -1806,7 +1896,7 @@ mod tests {
 
     #[test]
     fn test_compose_mode_enter_exit() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         assert_eq!(app.current_view, View::InboxList);
         assert!(app.compose_state.is_none());
 
@@ -1827,7 +1917,7 @@ mod tests {
 
     #[test]
     fn test_compose_field_navigation() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         app.enter_compose_mode();
 
         let compose = app.compose_state.as_ref().unwrap();
@@ -1860,7 +1950,7 @@ mod tests {
 
     #[test]
     fn test_compose_insert_mode() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         app.enter_compose_mode();
 
         assert_eq!(
@@ -1904,7 +1994,7 @@ mod tests {
 
     #[test]
     fn test_compose_text_input() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         app.enter_compose_mode();
         app.compose_enter_insert_mode();
 
@@ -1921,7 +2011,7 @@ mod tests {
 
     #[test]
     fn test_compose_preview_toggle() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         app.enter_compose_mode();
 
         assert_eq!(app.compose_state.as_ref().unwrap().show_preview, false);
@@ -1935,7 +2025,7 @@ mod tests {
 
     #[test]
     fn test_preview_panel_toggle() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         assert_eq!(app.show_preview_panel, false);
 
         app.toggle_preview_panel();
@@ -1947,7 +2037,7 @@ mod tests {
 
     #[test]
     fn test_compose_clear_field() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         app.enter_compose_mode();
         app.compose_enter_insert_mode();
 
@@ -2018,6 +2108,7 @@ mod tests {
             accounts: Vec::new(),
             current_account_id: None,
             email_sync_manager: None,
+            last_sync_result: Arc::new(Mutex::new(None)),
             theme: Theme::default(),
         };
 
@@ -2094,6 +2185,7 @@ mod tests {
             accounts: Vec::new(),
             current_account_id: None,
             email_sync_manager: None,
+            last_sync_result: Arc::new(Mutex::new(None)),
             theme: Theme::default(),
         };
 
@@ -2126,7 +2218,7 @@ mod tests {
 
     #[test]
     fn test_visual_mode_enter_exit() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         assert_eq!(app.visual_mode, false);
         assert_eq!(app.visual_selections.len(), 0);
 
@@ -2146,7 +2238,7 @@ mod tests {
 
     #[test]
     fn test_visual_mode_selection_extension() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         
         // Enter visual mode at index 0
         app.enter_visual_mode();
@@ -2179,7 +2271,7 @@ mod tests {
 
     #[test]
     fn test_visual_mode_batch_delete() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         let initial_count = app.emails.len();
         
         // Enter visual mode and select multiple emails
@@ -2206,7 +2298,7 @@ mod tests {
 
     #[test]
     fn test_visual_mode_batch_archive() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         let initial_count = app.emails.len();
         
         // Enter visual mode and select multiple emails
@@ -2232,7 +2324,7 @@ mod tests {
 
     #[test]
     fn test_single_delete_action() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         let initial_count = app.emails.len();
         
         // Select the first email
@@ -2259,7 +2351,7 @@ mod tests {
 
     #[test]
     fn test_single_delete_last_email() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         let initial_count = app.emails.len();
         
         // Move to the last email
@@ -2277,7 +2369,7 @@ mod tests {
 
     #[test]
     fn test_single_archive_action() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         let initial_count = app.emails.len();
         
         // Select the second email
@@ -2301,7 +2393,7 @@ mod tests {
 
     #[test]
     fn test_is_email_selected() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         
         // Initially nothing is selected
         assert!(!app.is_email_selected(0));
@@ -2321,7 +2413,7 @@ mod tests {
 
     #[test]
     fn test_visual_mode_only_in_inbox() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         
         // Switch to detail view
         app.open_email();
