@@ -1078,10 +1078,16 @@ impl App {
                                         let should_insert = if let Some(ref msg_id) = email.message_id {
                                             match db_clone.email_exists_by_message_id(msg_id).await {
                                                 Ok(exists) => !exists,
-                                                Err(_) => true, // If check fails, try to insert anyway
+                                                Err(e) => {
+                                                    // Log the error but continue with insertion attempt
+                                                    eprintln!("Warning: Failed to check email existence ({}): {}. Will attempt insertion.", msg_id, e);
+                                                    true
+                                                }
                                             }
                                         } else {
-                                            // No message_id, insert anyway (shouldn't happen with proper emails)
+                                            // Email lacks Message-ID header - log for monitoring
+                                            eprintln!("Warning: Email '{}' from '{}' has no Message-ID header. Cannot deduplicate.", 
+                                                     email.subject, email.from_address);
                                             true
                                         };
                                         
