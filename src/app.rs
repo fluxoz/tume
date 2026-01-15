@@ -210,7 +210,7 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         Self {
-            emails: Self::mock_emails(),
+            emails: Vec::new(),  // Start with empty inbox, real emails loaded from DB
             current_view: View::InboxList,
             selected_index: 0,
             should_quit: false,
@@ -294,15 +294,15 @@ impl App {
             db.clear_inbox().await?;
         }
 
-        // Load emails from database or populate with mock data if empty
+        // Load emails from database or populate with mock data if dev_mode is enabled
         let db_emails = if let Some(acc_id) = current_account_id {
             db.get_emails_by_folder_and_account("inbox", Some(acc_id)).await?
         } else {
             db.get_emails_by_folder("inbox").await?
         };
 
-        let emails = if db_emails.is_empty() {
-            // Populate with mock data on first run or after clearing in dev mode
+        let emails = if db_emails.is_empty() && dev_mode {
+            // Only populate with mock data in dev mode
             let mock_emails = Self::mock_emails();
             for email in &mock_emails {
                 let db_email = DbEmail {
@@ -1764,9 +1764,16 @@ impl App {
 mod tests {
     use super::*;
 
+    // Helper function to create an App with mock emails for testing
+    fn new_app_with_mock_emails() -> App {
+        let mut app = App::new();
+        app.emails = App::mock_emails();
+        app
+    }
+
     #[test]
     fn test_app_initialization() {
-        let app = App::new();
+        let app = new_app_with_mock_emails();
         assert_eq!(app.current_view, View::InboxList);
         assert_eq!(app.selected_index, 0);
         assert_eq!(app.should_quit, false);
@@ -1775,7 +1782,7 @@ mod tests {
 
     #[test]
     fn test_navigation() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         assert_eq!(app.selected_index, 0);
 
         app.next_email();
@@ -1797,7 +1804,7 @@ mod tests {
 
     #[test]
     fn test_navigation_bounds() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
 
         // Move to the last email
         for _ in 0..10 {
@@ -1810,7 +1817,7 @@ mod tests {
 
     #[test]
     fn test_view_switching() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         assert_eq!(app.current_view, View::InboxList);
 
         app.open_email();
@@ -1827,7 +1834,7 @@ mod tests {
 
     #[test]
     fn test_actions() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         let initial_count = app.emails.len();
 
         app.perform_action(Action::Delete);
@@ -1855,7 +1862,7 @@ mod tests {
 
     #[test]
     fn test_quit() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         assert_eq!(app.should_quit, false);
 
         app.quit();
@@ -1864,7 +1871,7 @@ mod tests {
 
     #[test]
     fn test_get_selected_email() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
 
         let email = app.get_selected_email();
         assert!(email.is_some());
@@ -1878,7 +1885,7 @@ mod tests {
 
     #[test]
     fn test_compose_mode_enter_exit() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         assert_eq!(app.current_view, View::InboxList);
         assert!(app.compose_state.is_none());
 
@@ -1899,7 +1906,7 @@ mod tests {
 
     #[test]
     fn test_compose_field_navigation() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         app.enter_compose_mode();
 
         let compose = app.compose_state.as_ref().unwrap();
@@ -1932,7 +1939,7 @@ mod tests {
 
     #[test]
     fn test_compose_insert_mode() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         app.enter_compose_mode();
 
         assert_eq!(
@@ -1976,7 +1983,7 @@ mod tests {
 
     #[test]
     fn test_compose_text_input() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         app.enter_compose_mode();
         app.compose_enter_insert_mode();
 
@@ -1993,7 +2000,7 @@ mod tests {
 
     #[test]
     fn test_compose_preview_toggle() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         app.enter_compose_mode();
 
         assert_eq!(app.compose_state.as_ref().unwrap().show_preview, false);
@@ -2007,7 +2014,7 @@ mod tests {
 
     #[test]
     fn test_preview_panel_toggle() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         assert_eq!(app.show_preview_panel, false);
 
         app.toggle_preview_panel();
@@ -2019,7 +2026,7 @@ mod tests {
 
     #[test]
     fn test_compose_clear_field() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         app.enter_compose_mode();
         app.compose_enter_insert_mode();
 
@@ -2200,7 +2207,7 @@ mod tests {
 
     #[test]
     fn test_visual_mode_enter_exit() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         assert_eq!(app.visual_mode, false);
         assert_eq!(app.visual_selections.len(), 0);
 
@@ -2220,7 +2227,7 @@ mod tests {
 
     #[test]
     fn test_visual_mode_selection_extension() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         
         // Enter visual mode at index 0
         app.enter_visual_mode();
@@ -2253,7 +2260,7 @@ mod tests {
 
     #[test]
     fn test_visual_mode_batch_delete() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         let initial_count = app.emails.len();
         
         // Enter visual mode and select multiple emails
@@ -2280,7 +2287,7 @@ mod tests {
 
     #[test]
     fn test_visual_mode_batch_archive() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         let initial_count = app.emails.len();
         
         // Enter visual mode and select multiple emails
@@ -2306,7 +2313,7 @@ mod tests {
 
     #[test]
     fn test_single_delete_action() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         let initial_count = app.emails.len();
         
         // Select the first email
@@ -2333,7 +2340,7 @@ mod tests {
 
     #[test]
     fn test_single_delete_last_email() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         let initial_count = app.emails.len();
         
         // Move to the last email
@@ -2351,7 +2358,7 @@ mod tests {
 
     #[test]
     fn test_single_archive_action() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         let initial_count = app.emails.len();
         
         // Select the second email
@@ -2375,7 +2382,7 @@ mod tests {
 
     #[test]
     fn test_is_email_selected() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         
         // Initially nothing is selected
         assert!(!app.is_email_selected(0));
@@ -2395,7 +2402,7 @@ mod tests {
 
     #[test]
     fn test_visual_mode_only_in_inbox() {
-        let mut app = App::new();
+        let mut app = new_app_with_mock_emails();
         
         // Switch to detail view
         app.open_email();
