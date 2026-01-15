@@ -205,6 +205,7 @@ pub struct App {
     pub email_sync_manager: Option<crate::email_sync::EmailSyncManager>,
     pub theme: Theme,
     pub last_sync_result: Arc<Mutex<Option<String>>>,
+    pub pending_g_key: bool,
 }
 
 impl App {
@@ -232,6 +233,7 @@ impl App {
             email_sync_manager: None,
             theme: Theme::default(),
             last_sync_result: Arc::new(Mutex::new(None)),
+            pending_g_key: false,
         }
     }
 
@@ -418,6 +420,7 @@ impl App {
             current_account_id,
             email_sync_manager: Some(crate::email_sync::EmailSyncManager::new(credentials)),
             last_sync_result: Arc::new(Mutex::new(None)),
+            pending_g_key: false,
         })
     }
 
@@ -509,6 +512,26 @@ impl App {
     pub fn previous_email(&mut self) {
         if self.selected_index > 0 {
             self.selected_index -= 1;
+            // Update visual selection if in visual mode
+            if self.visual_mode {
+                self.update_visual_selection();
+            }
+        }
+    }
+
+    pub fn jump_to_first_email(&mut self) {
+        if !self.emails.is_empty() {
+            self.selected_index = 0;
+            // Update visual selection if in visual mode
+            if self.visual_mode {
+                self.update_visual_selection();
+            }
+        }
+    }
+
+    pub fn jump_to_last_email(&mut self) {
+        if !self.emails.is_empty() {
+            self.selected_index = self.emails.len() - 1;
             // Update visual selection if in visual mode
             if self.visual_mode {
                 self.update_visual_selection();
@@ -2110,6 +2133,7 @@ mod tests {
             email_sync_manager: None,
             last_sync_result: Arc::new(Mutex::new(None)),
             theme: Theme::default(),
+            pending_g_key: false,
         };
 
         // Enter compose mode and add some content
@@ -2187,6 +2211,7 @@ mod tests {
             email_sync_manager: None,
             last_sync_result: Arc::new(Mutex::new(None)),
             theme: Theme::default(),
+            pending_g_key: false,
         };
 
         // Enter compose mode and add some content
@@ -2430,5 +2455,77 @@ mod tests {
         // Now it should work
         app.enter_visual_mode();
         assert_eq!(app.visual_mode, true);
+    }
+
+    #[test]
+    fn test_jump_to_first_email() {
+        let mut app = new_app_with_mock_emails();
+        
+        // Move to middle of list
+        app.selected_index = 2;
+        assert_eq!(app.selected_index, 2);
+        
+        // Jump to first
+        app.jump_to_first_email();
+        assert_eq!(app.selected_index, 0);
+        
+        // Should work from last position
+        app.selected_index = 4;
+        app.jump_to_first_email();
+        assert_eq!(app.selected_index, 0);
+        
+        // Should work when already at first
+        app.jump_to_first_email();
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_jump_to_last_email() {
+        let mut app = new_app_with_mock_emails();
+        
+        // Start at first
+        assert_eq!(app.selected_index, 0);
+        
+        // Jump to last
+        app.jump_to_last_email();
+        assert_eq!(app.selected_index, 4);
+        
+        // Should work from middle position
+        app.selected_index = 2;
+        app.jump_to_last_email();
+        assert_eq!(app.selected_index, 4);
+        
+        // Should work when already at last
+        app.jump_to_last_email();
+        assert_eq!(app.selected_index, 4);
+    }
+
+    #[test]
+    fn test_jump_with_visual_mode() {
+        let mut app = new_app_with_mock_emails();
+        
+        // Start at position 1
+        app.selected_index = 1;
+        
+        // Enter visual mode
+        app.enter_visual_mode();
+        assert_eq!(app.visual_anchor, Some(1));
+        assert_eq!(app.visual_selections.len(), 1);
+        
+        // Jump to last should extend selection
+        app.jump_to_last_email();
+        assert_eq!(app.selected_index, 4);
+        assert_eq!(app.visual_selections.len(), 4); // indices 1, 2, 3, 4
+        assert!(app.visual_selections.contains(&1));
+        assert!(app.visual_selections.contains(&2));
+        assert!(app.visual_selections.contains(&3));
+        assert!(app.visual_selections.contains(&4));
+        
+        // Jump to first should change selection
+        app.jump_to_first_email();
+        assert_eq!(app.selected_index, 0);
+        assert_eq!(app.visual_selections.len(), 2); // indices 0, 1
+        assert!(app.visual_selections.contains(&0));
+        assert!(app.visual_selections.contains(&1));
     }
 }

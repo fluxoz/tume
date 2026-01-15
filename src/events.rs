@@ -40,6 +40,23 @@ fn handle_inbox_keys(app: &mut App, key: KeyEvent) {
         KeyCode::Char('j') | KeyCode::Down => app.next_email(),
         KeyCode::Char('k') | KeyCode::Up => app.previous_email(),
 
+        // Vim-style jump to first/last (gg and G)
+        KeyCode::Char('g') => {
+            if app.pending_g_key {
+                // Second 'g' press - jump to first
+                app.jump_to_first_email();
+                app.pending_g_key = false;
+            } else {
+                // First 'g' press - set pending flag
+                app.pending_g_key = true;
+            }
+        }
+        KeyCode::Char('G') => {
+            // Shift+g - jump to last
+            app.jump_to_last_email();
+            app.pending_g_key = false;
+        }
+
         // Open email
         KeyCode::Enter | KeyCode::Char('l') => app.open_email(),
 
@@ -80,7 +97,10 @@ fn handle_inbox_keys(app: &mut App, key: KeyEvent) {
         // Quit
         KeyCode::Char('q') => app.quit(),
 
-        _ => {}
+        // Any other key clears pending_g_key
+        _ => {
+            app.pending_g_key = false;
+        }
     }
 }
 
@@ -90,6 +110,23 @@ fn handle_visual_mode_keys(app: &mut App, key: KeyEvent) {
         KeyCode::Char('j') | KeyCode::Down => app.next_email(),
         KeyCode::Char('k') | KeyCode::Up => app.previous_email(),
 
+        // Vim-style jump to first/last (gg and G)
+        KeyCode::Char('g') => {
+            if app.pending_g_key {
+                // Second 'g' press - jump to first
+                app.jump_to_first_email();
+                app.pending_g_key = false;
+            } else {
+                // First 'g' press - set pending flag
+                app.pending_g_key = true;
+            }
+        }
+        KeyCode::Char('G') => {
+            // Shift+g - jump to last
+            app.jump_to_last_email();
+            app.pending_g_key = false;
+        }
+
         // Batch actions
         KeyCode::Char('d') => app.perform_batch_action(Action::Delete),
         KeyCode::Char('a') => app.perform_batch_action(Action::Archive),
@@ -97,7 +134,10 @@ fn handle_visual_mode_keys(app: &mut App, key: KeyEvent) {
         // Exit visual mode
         KeyCode::Esc | KeyCode::Char('v') | KeyCode::Char('V') => app.exit_visual_mode(),
 
-        _ => {}
+        // Any other key clears pending_g_key
+        _ => {
+            app.pending_g_key = false;
+        }
     }
 }
 
