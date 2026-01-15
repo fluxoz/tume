@@ -361,38 +361,51 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     
     let right_section = right_section_parts.join(" │ ");
     
-    // Calculate available width for status message (subtract mode, padding, and right section)
-    let available_width = area.width.saturating_sub(4) as usize; // subtract borders
-    let mode_width = mode_text.len();
-    let right_width = right_section.len();
-    let padding = 4; // spaces around sections
+    // Calculate available width (area width minus borders)
+    let available_width = area.width.saturating_sub(4) as usize; // 2 chars for left border, 2 for right
     
-    let status_max_width = available_width
-        .saturating_sub(mode_width)
-        .saturating_sub(right_width)
-        .saturating_sub(padding);
+    // Calculate fixed widths
+    let mode_width = mode_text.len();
+    let mode_spacing = if !mode_text.is_empty() { 1 } else { 0 }; // space after mode
+    let right_width = right_section.len();
+    let min_spacing_before_right = 2; // minimum space before right section
+    
+    // Calculate maximum width available for status message
+    let fixed_width = mode_width + mode_spacing + right_width + min_spacing_before_right;
+    let status_max_width = if available_width > fixed_width {
+        available_width - fixed_width
+    } else {
+        0
+    };
     
     // Truncate status message if needed
-    let truncated_status = if status_text.len() > status_max_width {
+    let truncated_status = if status_max_width == 0 {
+        String::new()
+    } else if status_text.len() > status_max_width {
         // Safely truncate at character boundary
         let mut end = status_max_width.saturating_sub(3).max(1);
         // Ensure we're at a character boundary
         while end > 0 && !status_text.is_char_boundary(end) {
             end -= 1;
         }
-        format!("{}...", &status_text[..end])
+        if end > 0 {
+            format!("{}...", &status_text[..end])
+        } else {
+            String::new()
+        }
     } else {
         status_text.to_string()
     };
     
-    // Calculate padding to push right section to the right
+    // Calculate actual content width
     let status_display_width = truncated_status.len();
-    let mode_spacing = if !mode_text.is_empty() { 1 } else { 0 }; // space after mode if present
     let left_content_width = mode_width + mode_spacing + status_display_width;
+    
+    // Calculate padding to push right section to the right
     let padding_width = available_width
         .saturating_sub(left_content_width)
         .saturating_sub(right_width)
-        .saturating_sub(1); // one space before right section
+        .saturating_sub(min_spacing_before_right);
     
     // Build the single-line modeline
     let mut spans = Vec::new();
@@ -419,11 +432,12 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     
     // Padding to push right section to the right
     if padding_width > 0 {
-        spans.push(Span::raw(" ".repeat(padding_width)));
+        spans.push(Span::raw(" ".repeat(padding_width + min_spacing_before_right)));
+    } else {
+        spans.push(Span::raw(" ".repeat(min_spacing_before_right)));
     }
     
     // Right: Metadata
-    spans.push(Span::raw(" "));
     spans.push(Span::styled(
         right_section,
         Style::default().fg(theme.text_dim.to_color()),
