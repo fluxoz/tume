@@ -350,11 +350,10 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     // Build right section: position info, email count, theme
     let mut right_section_parts = Vec::new();
     
+    // Show position/total when emails exist, otherwise just show count
     if app.current_view == View::InboxList && !app.emails.is_empty() {
         right_section_parts.push(format!("{}/{}", app.selected_index + 1, app.emails.len()));
-    }
-    
-    if app.current_view == View::InboxList {
+    } else if app.current_view == View::InboxList {
         right_section_parts.push(format!("{}☰", app.emails.len()));
     }
     
@@ -375,15 +374,21 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     
     // Truncate status message if needed
     let truncated_status = if status_text.len() > status_max_width {
-        let end = status_max_width.saturating_sub(3).max(1);
-        format!("{}...", &status_text[..end.min(status_text.len())])
+        // Safely truncate at character boundary
+        let mut end = status_max_width.saturating_sub(3).max(1);
+        // Ensure we're at a character boundary
+        while end > 0 && !status_text.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}...", &status_text[..end])
     } else {
         status_text.to_string()
     };
     
     // Calculate padding to push right section to the right
     let status_display_width = truncated_status.len();
-    let left_content_width = mode_width + 1 + status_display_width; // mode + space + status
+    let mode_spacing = if !mode_text.is_empty() { 1 } else { 0 }; // space after mode if present
+    let left_content_width = mode_width + mode_spacing + status_display_width;
     let padding_width = available_width
         .saturating_sub(left_content_width)
         .saturating_sub(right_width)
