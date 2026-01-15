@@ -2577,4 +2577,86 @@ mod tests {
         assert!(app.visual_selections.contains(&0));
         assert!(app.visual_selections.contains(&1));
     }
+
+    #[tokio::test]
+    async fn test_load_emails_with_null_account_id() {
+        // This test verifies that emails with account_id = NULL are loaded
+        // even when a specific account is configured (backward compatibility)
+        
+        // Create a test database
+        let test_id = std::process::id();
+        let mut path = std::env::temp_dir();
+        path.push(format!("test_tume_null_account_{}.db", test_id));
+        let _ = std::fs::remove_file(&path);
+
+        let db = crate::db::EmailDatabase::new(Some(path.clone()))
+            .await
+            .unwrap();
+
+        // Insert emails with account_id = NULL (simulating old emails)
+        let email1 = crate::db::DbEmail {
+            id: 0,
+            from_address: "old@example.com".to_string(),
+            to_addresses: "me@example.com".to_string(),
+            cc_addresses: None,
+            bcc_addresses: None,
+            subject: "Old Email Without Account".to_string(),
+            body: "This email has no account_id".to_string(),
+            preview: "This email has no account_id".to_string(),
+            date: "2026-01-10 10:00".to_string(),
+            status: crate::db::EmailStatus::Unread,
+            is_flagged: false,
+            folder: "inbox".to_string(),
+            thread_id: None,
+            account_id: None, // NULL account_id
+            message_id: Some("<old1@example.com>".to_string()),
+        };
+
+        db.insert_email(&email1).await.unwrap();
+
+        // Create an app with a configured account
+        let mut app = App {
+            emails: Vec::new(),
+            current_view: View::InboxList,
+            selected_index: 0,
+            should_quit: false,
+            status_message: None,
+            compose_state: None,
+            db: Some(db),
+            draft_id: None,
+            show_preview_panel: false,
+            visual_mode: false,
+            visual_selections: HashSet::new(),
+            visual_anchor: None,
+            credentials_manager: None,
+            credentials: None,
+            credentials_setup_state: None,
+            credentials_unlock_state: None,
+            config: Config::default(),
+            accounts: vec![crate::db::DbAccount {
+                id: 1,
+                name: "Test Account".to_string(),
+                email: "test@example.com".to_string(),
+                provider: "test".to_string(),
+                is_default: true,
+                color: None,
+                display_order: 0,
+            }],
+            current_account_id: Some(1), // Account with ID 1
+            email_sync_manager: None,
+            last_sync_result: Arc::new(Mutex::new(None)),
+            theme: Theme::default(),
+            pending_g_key: false,
+        };
+
+        // Reload emails - should fall back to loading all emails including NULL account_id
+        app.reload_emails_for_current_account();
+
+        // Verify that the email was loaded despite account_id mismatch
+        assert_eq!(app.emails.len(), 1);
+        assert_eq!(app.emails[0].subject, "Old Email Without Account");
+
+        // Cleanup
+        let _ = std::fs::remove_file(&path);
+    }
 }
