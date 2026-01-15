@@ -266,7 +266,7 @@ impl ImapClient {
             date,
             status: if is_unread { DbEmailStatus::Unread } else { DbEmailStatus::Read },
             is_flagged,
-            folder: folder.to_string(),
+            folder: folder.to_lowercase(), // Normalize folder name to lowercase
             thread_id: None,
             account_id: None,
         })
