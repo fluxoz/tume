@@ -371,9 +371,11 @@ impl EmailDatabase {
     pub async fn insert_email(&self, email: &DbEmail) -> Result<i64> {
         self.conn
             .execute(
-                "INSERT INTO emails (from_address, to_addresses, cc_addresses, bcc_addresses, 
-                                     subject, body, preview, date, status, is_flagged, folder, thread_id, account_id, message_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                "INSERT INTO emails (
+                    from_address, to_addresses, cc_addresses, bcc_addresses, 
+                    subject, body, preview, date, status, is_flagged, 
+                    folder, thread_id, account_id, message_id
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 libsql::params![
                     email.from_address.as_str(),
                     email.to_addresses.as_str(),
