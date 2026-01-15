@@ -14,6 +14,7 @@ pub struct Email {
     pub preview: String,
     pub body: String,
     pub date: String,
+    pub imap_uid: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -338,6 +339,7 @@ impl App {
                     preview: e.preview,
                     body: e.body,
                     date: e.date,
+                    imap_uid: e.imap_uid,
                 })
                 .collect()
         };
@@ -465,6 +467,7 @@ impl App {
                 preview: "Hi team, I wanted to share some updates on our Q1 planning...".to_string(),
                 body: "Hi team,\n\nI wanted to share some updates on our Q1 planning. We've made significant progress on the roadmap and I'd like to schedule a meeting to discuss next steps.\n\nLooking forward to your feedback.\n\nBest regards,\nAlice".to_string(),
                 date: "2026-01-10 14:30".to_string(),
+                imap_uid: None,
             },
             Email {
                 id: 0,
@@ -473,6 +476,7 @@ impl App {
                 preview: "Here are the notes from our meeting yesterday...".to_string(),
                 body: "Here are the notes from our meeting yesterday:\n\n1. Discussed new feature requirements\n2. Reviewed timeline for implementation\n3. Assigned tasks to team members\n\nPlease review and let me know if I missed anything.\n\nBob".to_string(),
                 date: "2026-01-10 09:15".to_string(),
+                imap_uid: None,
             },
             Email {
                 id: 0,
@@ -481,6 +485,7 @@ impl App {
                 preview: "A new issue has been opened in your repository...".to_string(),
                 body: "A new issue has been opened in your repository fluxoz/tume:\n\nTitle: Create a TUI stub for this project\n\nThis project is meant to be a TUI email client...".to_string(),
                 date: "2026-01-09 22:45".to_string(),
+                imap_uid: None,
             },
             Email {
                 id: 0,
@@ -489,6 +494,7 @@ impl App {
                 preview: "Thanks for submitting the budget request...".to_string(),
                 body: "Thanks for submitting the budget request. I've reviewed the numbers and everything looks good. Approved!\n\nCharlie".to_string(),
                 date: "2026-01-09 16:20".to_string(),
+                imap_uid: None,
             },
             Email {
                 id: 0,
@@ -497,6 +503,7 @@ impl App {
                 preview: "This week in tech: Rust 1.92 brings exciting new features...".to_string(),
                 body: "This week in tech:\n\n- Rust 1.92 Released with improved compile times\n- New TUI libraries gaining popularity\n- Terminal applications making a comeback\n\nRead more at techblog.com".to_string(),
                 date: "2026-01-09 08:00".to_string(),
+                imap_uid: None,
             },
         ]
     }
@@ -560,22 +567,7 @@ impl App {
                     let email = &self.emails[self.selected_index];
                     let email_id = email.id;
                     let email_subject = email.subject.clone();
-                    
-                    // Get IMAP UID for remote deletion (must happen before removal from UI)
-                    let imap_uid = if let Some(ref db) = self.db {
-                        let db_clone = db.clone();
-                        // Blocking fetch of UID from database
-                        std::thread::spawn(move || {
-                            tokio::runtime::Handle::current().block_on(async {
-                                db_clone.get_email_by_id(email_id).await
-                                    .ok()
-                                    .flatten()
-                                    .and_then(|e| e.imap_uid)
-                            })
-                        }).join().ok().flatten()
-                    } else {
-                        None
-                    };
+                    let imap_uid = email.imap_uid;
                     
                     // Delete from database if available
                     // Note: Using fire-and-forget pattern as this is a background operation.
@@ -1039,29 +1031,8 @@ impl App {
         for &index in &indices {
             if let Some(email) = self.emails.get(index) {
                 email_ids.push(email.id);
-            }
-        }
-
-        // Get IMAP UIDs from database for remote deletion
-        if matches!(action, Action::Delete) {
-            if let Some(ref db) = self.db {
-                let db_clone = db.clone();
-                let email_ids_clone = email_ids.clone();
-                // Fetch UIDs in blocking manner for immediate use
-                if let Ok(uids) = std::thread::spawn(move || {
-                    tokio::runtime::Handle::current().block_on(async {
-                        let mut uids = Vec::new();
-                        for id in email_ids_clone {
-                            if let Ok(Some(email)) = db_clone.get_email_by_id(id).await {
-                                if let Some(uid) = email.imap_uid {
-                                    uids.push(uid);
-                                }
-                            }
-                        }
-                        uids
-                    })
-                }).join() {
-                    imap_uids = uids;
+                if let Some(uid) = email.imap_uid {
+                    imap_uids.push(uid);
                 }
             }
         }
@@ -1881,6 +1852,7 @@ impl App {
                             preview: e.preview,
                             body: e.body,
                             date: e.date,
+                            imap_uid: e.imap_uid,
                         })
                         .collect();
                     self.selected_index = 0;
