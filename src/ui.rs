@@ -402,12 +402,6 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     let status_display_width = truncated_status.len();
     let left_content_width = mode_width + mode_spacing + status_display_width;
     
-    // Calculate padding to push right section to the right
-    let padding_width = available_width
-        .saturating_sub(left_content_width)
-        .saturating_sub(right_width)
-        .saturating_sub(min_spacing_before_right);
-    
     // Build the single-line modeline
     let mut spans = Vec::new();
     
@@ -431,10 +425,14 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
         ));
     }
     
-    // Padding to push right section to the right
-    // Note: padding_width was calculated by subtracting min_spacing_before_right (line 409),
-    // so we add it back here to get the actual total spacing needed
-    let total_spacing = padding_width + min_spacing_before_right;
+    // Calculate spacing to push right section to the right
+    // Total width - left content - right section = spacing
+    let spacing = available_width
+        .saturating_sub(left_content_width)
+        .saturating_sub(right_width);
+    
+    // Always add at least min_spacing_before_right
+    let total_spacing = spacing.max(min_spacing_before_right);
     if total_spacing > 0 {
         spans.push(Span::raw(" ".repeat(total_spacing)));
     }
