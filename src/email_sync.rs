@@ -111,7 +111,9 @@ impl ImapClient {
         folder: &str,
         limit: Option<usize>,
     ) -> Result<Vec<DbEmail>> {
-        // Connect to IMAP server with TLS
+        use crate::providers::SecurityType;
+        
+        // Connect to IMAP server based on security type
         let domain = &credentials.imap_server;
         let port = credentials.imap_port;
         
@@ -119,8 +121,18 @@ impl ImapClient {
             .build()
             .context("Failed to build TLS connector")?;
         
-        let client = imap::connect((domain.as_str(), port), domain, &tls)
-            .context(format!("Failed to connect to {}:{}", domain, port))?;
+        let client = match credentials.imap_security {
+            SecurityType::Tls => {
+                // Implicit TLS (SSL/TLS on connection)
+                imap::connect((domain.as_str(), port), domain, &tls)
+                    .context(format!("Failed to connect to {}:{} with TLS", domain, port))?
+            }
+            SecurityType::StartTls => {
+                // STARTTLS (plain connection then upgrade)
+                imap::connect_starttls((domain.as_str(), port), domain, &tls)
+                    .context(format!("Failed to connect to {}:{} with STARTTLS", domain, port))?
+            }
+        };
 
         // Login
         let mut session = client
@@ -255,6 +267,8 @@ impl ImapClient {
         let credentials = self.credentials.clone();
         
         tokio::task::spawn_blocking(move || {
+            use crate::providers::SecurityType;
+            
             let domain = &credentials.imap_server;
             let port = credentials.imap_port;
             
@@ -262,8 +276,16 @@ impl ImapClient {
                 .build()
                 .context("Failed to build TLS connector")?;
             
-            let client = imap::connect((domain.as_str(), port), domain, &tls)
-                .context(format!("Failed to connect to {}:{}", domain, port))?;
+            let client = match credentials.imap_security {
+                SecurityType::Tls => {
+                    imap::connect((domain.as_str(), port), domain, &tls)
+                        .context(format!("Failed to connect to {}:{} with TLS", domain, port))?
+                }
+                SecurityType::StartTls => {
+                    imap::connect_starttls((domain.as_str(), port), domain, &tls)
+                        .context(format!("Failed to connect to {}:{} with STARTTLS", domain, port))?
+                }
+            };
 
             let mut session = client
                 .login(&credentials.imap_username, &credentials.imap_password)
@@ -321,6 +343,7 @@ impl SmtpClient {
         subject: &str,
         body: &str,
     ) -> Result<()> {
+        use crate::providers::SecurityType;
         use lettre::message::header::ContentType;
         use lettre::transport::smtp::authentication::Credentials as LettreCredentials;
         use lettre::{Message, SmtpTransport, Transport};
@@ -340,11 +363,24 @@ impl SmtpClient {
             credentials.smtp_password.clone(),
         );
 
-        let mailer = SmtpTransport::relay(&credentials.smtp_server)
-            .context("Failed to create SMTP transport")?
-            .credentials(creds)
-            .port(credentials.smtp_port)
-            .build();
+        let mailer = match credentials.smtp_security {
+            SecurityType::StartTls => {
+                // STARTTLS (lettre's relay() uses STARTTLS by default)
+                SmtpTransport::relay(&credentials.smtp_server)
+                    .context("Failed to create SMTP transport")?
+                    .credentials(creds)
+                    .port(credentials.smtp_port)
+                    .build()
+            }
+            SecurityType::Tls => {
+                // Implicit TLS/SSL
+                SmtpTransport::relay(&credentials.smtp_server)
+                    .context("Failed to create SMTP transport")?
+                    .credentials(creds)
+                    .port(credentials.smtp_port)
+                    .build()
+            }
+        };
 
         // Send email
         mailer
@@ -359,6 +395,7 @@ impl SmtpClient {
         let credentials = self.credentials.clone();
         
         tokio::task::spawn_blocking(move || {
+            use crate::providers::SecurityType;
             use lettre::transport::smtp::authentication::Credentials as LettreCredentials;
             use lettre::{SmtpTransport, Transport};
 
@@ -367,11 +404,22 @@ impl SmtpClient {
                 credentials.smtp_password.clone(),
             );
 
-            let mailer = SmtpTransport::relay(&credentials.smtp_server)
-                .context("Failed to create SMTP transport")?
-                .credentials(creds)
-                .port(credentials.smtp_port)
-                .build();
+            let mailer = match credentials.smtp_security {
+                SecurityType::StartTls => {
+                    SmtpTransport::relay(&credentials.smtp_server)
+                        .context("Failed to create SMTP transport")?
+                        .credentials(creds)
+                        .port(credentials.smtp_port)
+                        .build()
+                }
+                SecurityType::Tls => {
+                    SmtpTransport::relay(&credentials.smtp_server)
+                        .context("Failed to create SMTP transport")?
+                        .credentials(creds)
+                        .port(credentials.smtp_port)
+                        .build()
+                }
+            };
 
             mailer
                 .test_connection()
@@ -521,15 +569,18 @@ mod tests {
     use super::*;
 
     fn create_test_credentials() -> Credentials {
+        use crate::providers::SecurityType;
         Credentials {
             imap_server: "imap.example.com".to_string(),
             imap_port: 993,
             imap_username: "user@example.com".to_string(),
             imap_password: "password".to_string(),
+            imap_security: SecurityType::Tls,
             smtp_server: "smtp.example.com".to_string(),
             smtp_port: 587,
             smtp_username: "user@example.com".to_string(),
             smtp_password: "password".to_string(),
+            smtp_security: SecurityType::StartTls,
         }
     }
 

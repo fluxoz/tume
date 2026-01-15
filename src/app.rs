@@ -101,10 +101,12 @@ pub struct CredentialsSetupState {
     pub imap_port: String,
     pub imap_username: String,
     pub imap_password: String,
+    pub imap_security: crate::providers::SecurityType,
     pub smtp_server: String,
     pub smtp_port: String,
     pub smtp_username: String,
     pub smtp_password: String,
+    pub smtp_security: crate::providers::SecurityType,
     pub master_password: String,
     pub master_password_confirm: String,
     pub current_field: CredentialField,
@@ -123,10 +125,12 @@ impl CredentialsSetupState {
             imap_port: "993".to_string(),
             imap_username: String::new(),
             imap_password: String::new(),
+            imap_security: crate::providers::SecurityType::Tls,
             smtp_server: String::new(),
             smtp_port: "587".to_string(),
             smtp_username: String::new(),
             smtp_password: String::new(),
+            smtp_security: crate::providers::SecurityType::StartTls,
             master_password: String::new(),
             master_password_confirm: String::new(),
             current_field: CredentialField::ImapServer,
@@ -144,8 +148,10 @@ impl CredentialsSetupState {
         self.selected_provider = Some(provider.id.to_string());
         self.imap_server = provider.imap_server.to_string();
         self.imap_port = provider.imap_port.to_string();
+        self.imap_security = provider.imap_security.clone();
         self.smtp_server = provider.smtp_server.to_string();
         self.smtp_port = provider.smtp_port.to_string();
+        self.smtp_security = provider.smtp_security.clone();
         self.provider_selection_mode = false;
     }
 
@@ -1411,10 +1417,12 @@ impl App {
             imap_port,
             imap_username: setup.imap_username.clone(),
             imap_password: setup.imap_password.clone(),
+            imap_security: setup.imap_security,
             smtp_server: setup.smtp_server.clone(),
             smtp_port,
             smtp_username: setup.smtp_username.clone(),
             smtp_password: setup.smtp_password.clone(),
+            smtp_security: setup.smtp_security,
         };
 
         // Debug log before save
