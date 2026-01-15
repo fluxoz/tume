@@ -14,6 +14,7 @@ pub struct Email {
     pub preview: String,
     pub body: String,
     pub date: String,
+    pub imap_uid: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -323,6 +324,7 @@ impl App {
                     thread_id: None,
                     account_id: current_account_id,
                     message_id: None, // Mock emails don't have real message IDs
+                    imap_uid: None, // Mock emails don't have IMAP UIDs
                 };
                 db.insert_email(&db_email).await?;
             }
@@ -337,6 +339,7 @@ impl App {
                     preview: e.preview,
                     body: e.body,
                     date: e.date,
+                    imap_uid: e.imap_uid,
                 })
                 .collect()
         };
@@ -464,6 +467,7 @@ impl App {
                 preview: "Hi team, I wanted to share some updates on our Q1 planning...".to_string(),
                 body: "Hi team,\n\nI wanted to share some updates on our Q1 planning. We've made significant progress on the roadmap and I'd like to schedule a meeting to discuss next steps.\n\nLooking forward to your feedback.\n\nBest regards,\nAlice".to_string(),
                 date: "2026-01-10 14:30".to_string(),
+                imap_uid: None,
             },
             Email {
                 id: 0,
@@ -472,6 +476,7 @@ impl App {
                 preview: "Here are the notes from our meeting yesterday...".to_string(),
                 body: "Here are the notes from our meeting yesterday:\n\n1. Discussed new feature requirements\n2. Reviewed timeline for implementation\n3. Assigned tasks to team members\n\nPlease review and let me know if I missed anything.\n\nBob".to_string(),
                 date: "2026-01-10 09:15".to_string(),
+                imap_uid: None,
             },
             Email {
                 id: 0,
@@ -480,6 +485,7 @@ impl App {
                 preview: "A new issue has been opened in your repository...".to_string(),
                 body: "A new issue has been opened in your repository fluxoz/tume:\n\nTitle: Create a TUI stub for this project\n\nThis project is meant to be a TUI email client...".to_string(),
                 date: "2026-01-09 22:45".to_string(),
+                imap_uid: None,
             },
             Email {
                 id: 0,
@@ -488,6 +494,7 @@ impl App {
                 preview: "Thanks for submitting the budget request...".to_string(),
                 body: "Thanks for submitting the budget request. I've reviewed the numbers and everything looks good. Approved!\n\nCharlie".to_string(),
                 date: "2026-01-09 16:20".to_string(),
+                imap_uid: None,
             },
             Email {
                 id: 0,
@@ -496,6 +503,7 @@ impl App {
                 preview: "This week in tech: Rust 1.92 brings exciting new features...".to_string(),
                 body: "This week in tech:\n\n- Rust 1.92 Released with improved compile times\n- New TUI libraries gaining popularity\n- Terminal applications making a comeback\n\nRead more at techblog.com".to_string(),
                 date: "2026-01-09 08:00".to_string(),
+                imap_uid: None,
             },
         ]
     }
@@ -559,6 +567,7 @@ impl App {
                     let email = &self.emails[self.selected_index];
                     let email_id = email.id;
                     let email_subject = email.subject.clone();
+                    let imap_uid = email.imap_uid;
                     
                     // Delete from database if available
                     // Note: Using fire-and-forget pattern as this is a background operation.
@@ -571,6 +580,18 @@ impl App {
                                 eprintln!("Failed to delete email from database: {}", e);
                             }
                         });
+                    }
+                    
+                    // Delete from remote IMAP server if UID is available
+                    if let (Some(uid), Some(sync_manager)) = (imap_uid, &self.email_sync_manager) {
+                        if let Some(imap_client) = sync_manager.imap_client() {
+                            let imap_client = imap_client.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = imap_client.delete_emails("INBOX", &[uid]).await {
+                                    eprintln!("Failed to delete email from IMAP server: {}", e);
+                                }
+                            });
+                        }
                     }
                     
                     // Remove email from the vector
@@ -1004,11 +1025,15 @@ impl App {
         let mut indices: Vec<usize> = self.visual_selections.iter().copied().collect();
         indices.sort_by(|a, b| b.cmp(a)); // Sort descending
 
-        // Collect email IDs and perform database operations
+        // Collect email IDs and IMAP UIDs for deletion
         let mut email_ids = Vec::new();
+        let mut imap_uids = Vec::new();
         for &index in &indices {
             if let Some(email) = self.emails.get(index) {
                 email_ids.push(email.id);
+                if let Some(uid) = email.imap_uid {
+                    imap_uids.push(uid);
+                }
             }
         }
 
@@ -1035,6 +1060,20 @@ impl App {
                     });
                 }
                 _ => {}
+            }
+        }
+
+        // Delete from remote IMAP server for batch delete
+        if matches!(action, Action::Delete) && !imap_uids.is_empty() {
+            if let Some(sync_manager) = &self.email_sync_manager {
+                if let Some(imap_client) = sync_manager.imap_client() {
+                    let imap_client = imap_client.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = imap_client.delete_emails("INBOX", &imap_uids).await {
+                            eprintln!("Failed to batch delete emails from IMAP server: {}", e);
+                        }
+                    });
+                }
             }
         }
 
@@ -1813,6 +1852,7 @@ impl App {
                             preview: e.preview,
                             body: e.body,
                             date: e.date,
+                            imap_uid: e.imap_uid,
                         })
                         .collect();
                     self.selected_index = 0;
