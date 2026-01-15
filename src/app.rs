@@ -1100,8 +1100,8 @@ impl App {
                     }
                 });
                 
-                // Reload emails from database
-                self.reload_emails_for_current_account();
+                // Note: Emails will be reloaded automatically when sync completes
+                // via check_sync_result() in the main event loop
             }
         } else {
             self.status_message = Some(
@@ -1112,10 +1112,21 @@ impl App {
     
     /// Check and display last sync result
     pub fn check_sync_result(&mut self) {
-        if let Ok(mut result) = self.last_sync_result.lock() {
+        let should_reload = if let Ok(mut result) = self.last_sync_result.lock() {
             if let Some(msg) = result.take() {
+                let is_success = msg.starts_with("✓");
                 self.status_message = Some(msg);
+                is_success
+            } else {
+                false
             }
+        } else {
+            false
+        };
+        
+        // Reload emails after releasing the lock
+        if should_reload {
+            self.reload_emails_for_current_account();
         }
     }
 
