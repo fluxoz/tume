@@ -376,10 +376,12 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     let status_max_width = available_width.saturating_sub(fixed_width);
     
     // Truncate status message if needed
+    const MIN_WIDTH_FOR_ELLIPSIS: usize = 4; // Minimum space for at least 1 char + "..."
+    
     let truncated_status = if status_max_width == 0 {
         String::new()
-    } else if status_max_width < 4 {
-        // Not enough space for text + ellipsis, just show empty or very short
+    } else if status_max_width < MIN_WIDTH_FOR_ELLIPSIS {
+        // Not enough space for text + ellipsis, just show empty
         String::new()
     } else if status_text.len() > status_max_width {
         // Safely truncate at character boundary
@@ -432,9 +434,9 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
         .saturating_sub(right_width);
     
     // Always add at least min_spacing_before_right
-    let total_spacing = spacing.max(min_spacing_before_right);
-    if total_spacing > 0 {
-        spans.push(Span::raw(" ".repeat(total_spacing)));
+    let final_spacing = spacing.max(min_spacing_before_right);
+    if final_spacing > 0 {
+        spans.push(Span::raw(" ".repeat(final_spacing)));
     }
     
     // Right: Metadata
