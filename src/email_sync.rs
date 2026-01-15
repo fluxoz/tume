@@ -117,7 +117,17 @@ impl ImapClient {
         let domain = &credentials.imap_server;
         let port = credentials.imap_port;
         
-        let tls = native_tls::TlsConnector::builder()
+        // For localhost/127.0.0.1 (ProtonMail Bridge, etc.), disable cert verification
+        // since they use self-signed certificates
+        let is_localhost = domain == "127.0.0.1" || domain == "localhost";
+        
+        let mut tls_builder = native_tls::TlsConnector::builder();
+        if is_localhost {
+            tls_builder.danger_accept_invalid_certs(true);
+            tls_builder.danger_accept_invalid_hostnames(true);
+        }
+        
+        let tls = tls_builder
             .build()
             .context("Failed to build TLS connector")?;
         
@@ -272,7 +282,16 @@ impl ImapClient {
             let domain = &credentials.imap_server;
             let port = credentials.imap_port;
             
-            let tls = native_tls::TlsConnector::builder()
+            // For localhost/127.0.0.1 (ProtonMail Bridge, etc.), disable cert verification
+            let is_localhost = domain == "127.0.0.1" || domain == "localhost";
+            
+            let mut tls_builder = native_tls::TlsConnector::builder();
+            if is_localhost {
+                tls_builder.danger_accept_invalid_certs(true);
+                tls_builder.danger_accept_invalid_hostnames(true);
+            }
+            
+            let tls = tls_builder
                 .build()
                 .context("Failed to build TLS connector")?;
             
