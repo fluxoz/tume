@@ -1215,7 +1215,7 @@ impl App {
                                     }
                                 }
                                 Err(e) => {
-                                    let msg = format!("✗ {:#}", e);
+                                    let msg = format!("✗ {:#}", e).replace('\n', " ");
                                     eprintln!("{}", msg);
                                     if let Ok(mut result) = sync_result.lock() {
                                         *result = Some(msg);
