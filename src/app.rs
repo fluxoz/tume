@@ -1215,7 +1215,9 @@ impl App {
                                     }
                                 }
                                 Err(e) => {
-                                    let msg = format!("✗ {:#}", e).replace('\n', " ");
+                                    // Get the root cause error message
+                                    let root_cause = e.root_cause().to_string();
+                                    let msg = format!("✗ Sync failed: {}", root_cause).replace('\n', " ");
                                     eprintln!("{}", msg);
                                     if let Ok(mut result) = sync_result.lock() {
                                         *result = Some(msg);
