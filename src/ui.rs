@@ -65,7 +65,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         .constraints([
             Constraint::Length(3),
             Constraint::Min(0),
-            Constraint::Length(3),
+            Constraint::Length(4),
         ])
         .split(f.area());
 
