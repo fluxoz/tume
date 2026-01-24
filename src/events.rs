@@ -15,6 +15,12 @@ pub fn handle_events(app: &mut App) -> io::Result<()> {
 }
 
 fn handle_key_event(app: &mut App, key: KeyEvent) {
+    // Check if in command mode first
+    if app.command_mode {
+        handle_command_mode_keys(app, key);
+        return;
+    }
+
     // Clear status message on any key press
     app.status_message = None;
 
@@ -94,8 +100,8 @@ fn handle_inbox_keys(app: &mut App, key: KeyEvent) {
         // Credentials management
         KeyCode::Char('m') => app.enter_credentials_management(),
 
-        // Quit
-        KeyCode::Char('q') => app.quit(),
+        // Enter command mode
+        KeyCode::Char(':') => app.enter_command_mode(),
 
         // Any other key clears pending_g_key
         _ => {
@@ -152,8 +158,8 @@ fn handle_detail_keys(app: &mut App, key: KeyEvent) {
         KeyCode::Char('r') => app.perform_action(Action::Reply),
         KeyCode::Char('f') => app.perform_action(Action::Forward),
 
-        // Quit
-        KeyCode::Char('q') => app.quit(),
+        // Enter command mode
+        KeyCode::Char(':') => app.enter_command_mode(),
 
         _ => {}
     }
@@ -191,6 +197,9 @@ fn handle_compose_normal_keys(app: &mut App, key: KeyEvent) {
         // Exit compose mode
         KeyCode::Esc => app.exit_compose_mode(),
         KeyCode::Char('q') => app.exit_compose_mode(),
+
+        // Enter command mode
+        KeyCode::Char(':') => app.enter_command_mode(),
 
         _ => {}
     }
@@ -387,6 +396,32 @@ fn handle_credentials_management_keys(app: &mut App, key: KeyEvent) {
         // Go back
         KeyCode::Esc => {
             app.exit_credentials_management();
+        }
+
+        _ => {}
+    }
+}
+
+fn handle_command_mode_keys(app: &mut App, key: KeyEvent) {
+    match key.code {
+        // Execute command
+        KeyCode::Enter => {
+            app.execute_command();
+        }
+
+        // Cancel command mode
+        KeyCode::Esc => {
+            app.exit_command_mode();
+        }
+
+        // Delete character
+        KeyCode::Backspace => {
+            app.command_delete_char();
+        }
+
+        // Insert character
+        KeyCode::Char(c) => {
+            app.command_insert_char(c);
         }
 
         _ => {}
