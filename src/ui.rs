@@ -318,22 +318,41 @@ fn render_email_detail(f: &mut Frame, area: Rect, app: &App) {
 fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
     
+    // If in command mode, show command prompt
+    if app.command_mode {
+        let command_text = format!(":{}", app.command_buffer);
+        let text = vec![
+            Line::from(vec![
+                Span::styled(command_text, Style::default().fg(theme.text_normal.to_color())),
+            ]),
+            Line::from(Span::styled("Enter: Execute | Esc: Cancel", Style::default().fg(theme.text_dim.to_color()))),
+        ];
+        let footer = Paragraph::new(text)
+            .style(Style::default().bg(theme.status_bar.to_color()))
+            .alignment(Alignment::Left)
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.border.to_color())));
+        f.render_widget(footer, area);
+        return;
+    }
+    
     let help_text = match app.current_view {
         View::InboxList => {
             if app.visual_mode {
                 "j/k: Extend selection | d: Delete selected | a: Archive selected | Esc: Exit visual mode"
             } else {
-                "j/k: Navigate | Enter/l: Read | V: Visual mode | p: Preview | s: Sync | d: Delete | a: Archive | c: Compose | m: Creds | q: Quit"
+                "j/k: Navigate | Enter/l: Read | V: Visual mode | p: Preview | s: Sync | d: Delete | a: Archive | c: Compose | m: Creds | :: Cmd"
             }
         }
         View::EmailDetail => {
-            "h/Esc: Back | d: Delete | a: Archive | r: Reply | f: Forward | q: Quit"
+            "h/Esc: Back | d: Delete | a: Archive | r: Reply | f: Forward | :: Cmd"
         }
         View::Compose => {
             if let Some(ref compose) = app.compose_state {
                 match compose.mode {
                     ComposeMode::Normal => {
-                        "i: Insert | j/k: Navigate | d: Clear | p: Preview | w: Save draft | Esc/q: Exit"
+                        "i: Insert | j/k: Navigate | d: Clear | p: Preview | w: Save draft | Esc/q: Exit | :: Cmd"
                     }
                     ComposeMode::Insert => "Esc: Normal mode | Type to edit field",
                 }

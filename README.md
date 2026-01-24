@@ -368,7 +368,7 @@ The inbox displays a list of emails with the following information:
 | `c` | Compose new email |
 | `f` | Forward email (placeholder) |
 | `m` | Manage credentials |
-| `q` | Quit application |
+| `:` | Enter command mode |
 
 #### Visual Line Mode
 
@@ -425,7 +425,7 @@ When you open an email, you'll see:
 | `a` | Archive email |
 | `r` | Reply to email (placeholder) |
 | `f` | Forward email (placeholder) |
-| `q` | Quit application |
+| `:` | Enter command mode |
 
 ### Compose View
 
@@ -453,6 +453,7 @@ The compose view allows you to write new emails with vim-style modal editing.
 | `p` | Toggle markdown preview for body |
 | `w` | Save draft to database |
 | `Esc` or `q` | Exit compose mode (draft is auto-saved) |
+| `:` | Enter command mode |
 
 #### Keybindings (Compose View - Insert Mode)
 
@@ -538,6 +539,43 @@ TUME automatically manages email drafts to prevent accidental data loss:
 6. Continue editing or quit - draft is preserved
 
 **Note**: Currently, TUME keeps only the most recent draft. Sending an email or creating a new draft will replace the previous one.
+
+### Command Mode
+
+TUME implements vim-style command mode, which provides a safe way to execute commands like quitting the application.
+
+#### Entering Command Mode
+
+Press `:` (colon) from any of the following views:
+- Inbox view (normal mode)
+- Email detail view
+- Compose view (normal mode)
+
+When you press `:`, the footer will change to show a command prompt.
+
+#### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `:q` or `:quit` | Quit the application |
+
+#### Keybindings (Command Mode)
+
+| Key | Action |
+|-----|--------|
+| Type characters | Enter command text |
+| `Backspace` | Delete last character |
+| `Enter` | Execute the command |
+| `Esc` | Cancel and exit command mode |
+
+#### Example Usage
+
+1. Press `:` to enter command mode
+2. Type `q` (the command prompt will show `:q`)
+3. Press `Enter` to quit the application
+4. Or press `Esc` to cancel without executing
+
+This prevents accidental exits compared to the traditional single-key quit command, making TUME safer to use in a vim-like workflow.
 
 ## Architecture
 
