@@ -1215,7 +1215,7 @@ impl App {
                                     }
                                 }
                                 Err(e) => {
-                                    let msg = format!("✗ Sync failed: {}", e);
+                                    let msg = format!("✗ Sync failed: {:#}", e);
                                     eprintln!("{}", msg);
                                     if let Ok(mut result) = sync_result.lock() {
                                         *result = Some(msg);
