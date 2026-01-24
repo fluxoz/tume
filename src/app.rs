@@ -207,6 +207,8 @@ pub struct App {
     pub theme: Theme,
     pub last_sync_result: Arc<Mutex<Option<String>>>,
     pub pending_g_key: bool,
+    pub command_mode: bool,
+    pub command_buffer: String,
 }
 
 impl App {
@@ -235,6 +237,8 @@ impl App {
             theme: Theme::default(),
             last_sync_result: Arc::new(Mutex::new(None)),
             pending_g_key: false,
+            command_mode: false,
+            command_buffer: String::new(),
         }
     }
 
@@ -425,6 +429,8 @@ impl App {
             email_sync_manager: Some(crate::email_sync::EmailSyncManager::new(credentials)),
             last_sync_result: Arc::new(Mutex::new(None)),
             pending_g_key: false,
+            command_mode: false,
+            command_buffer: String::new(),
         })
     }
 
@@ -1103,6 +1109,43 @@ impl App {
 
     pub fn quit(&mut self) {
         self.should_quit = true;
+    }
+
+    // Command mode methods
+    pub fn enter_command_mode(&mut self) {
+        self.command_mode = true;
+        self.command_buffer.clear();
+    }
+
+    pub fn exit_command_mode(&mut self) {
+        self.command_mode = false;
+        self.command_buffer.clear();
+    }
+
+    pub fn command_insert_char(&mut self, c: char) {
+        self.command_buffer.push(c);
+    }
+
+    pub fn command_delete_char(&mut self) {
+        self.command_buffer.pop();
+    }
+
+    pub fn execute_command(&mut self) {
+        let command = self.command_buffer.trim();
+        
+        match command {
+            "q" | "quit" => {
+                self.quit();
+            }
+            "" => {
+                // Empty command, just exit command mode
+            }
+            _ => {
+                self.status_message = Some(format!("Unknown command: :{}", command));
+            }
+        }
+        
+        self.exit_command_mode();
     }
 
     /// Attempt to sync emails from IMAP server
@@ -2202,6 +2245,8 @@ mod tests {
             last_sync_result: Arc::new(Mutex::new(None)),
             theme: Theme::default(),
             pending_g_key: false,
+            command_mode: false,
+            command_buffer: String::new(),
         };
 
         // Enter compose mode and add some content
@@ -2280,6 +2325,8 @@ mod tests {
             last_sync_result: Arc::new(Mutex::new(None)),
             theme: Theme::default(),
             pending_g_key: false,
+            command_mode: false,
+            command_buffer: String::new(),
         };
 
         // Enter compose mode and add some content
