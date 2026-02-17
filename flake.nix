@@ -1,5 +1,5 @@
 {
-  description = "nRF Microbit Learning";
+  description = "Tume development environment";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
@@ -22,7 +22,9 @@
       devShells.default = pkgs.mkShell {
         buildInputs = with pkgs; [
           cargo-binutils
+          cargo-watch
           cargo-generate
+          cmake
           gdb
           openssl
           openssl.dev
