@@ -69,6 +69,45 @@ impl Db {
         }
         Ok(out)
     }
+
+    pub async fn load_emails(&self) -> Result<Vec<Email>, libsql::Error> {
+        let mut rows = self
+            .conn
+            .query("select from_addr, subject, body, datetime_received, datetime_read, unread from emails order by datetime_received desc", ())
+            .await?;
+        let mut out = Vec::new();
+        while let Some(row) = rows.next().await? {
+            let from_addr: String = row.get(0)?;
+            let subject: String = row.get(1)?;
+            let body: String = row.get(2)?;
+            let datetime_received_str: String = row.get(3)?;
+            let datetime_read_str: Option<String> = row.get(4)?;
+            let unread_i64: i64 = row.get(5)?;
+            
+            // Parse datetime_received - skip this email if parsing fails
+            let Ok(datetime_received_parsed) = chrono::DateTime::parse_from_rfc3339(&datetime_received_str) else {
+                continue;
+            };
+            let datetime_received = datetime_received_parsed.with_timezone(&chrono::Local);
+            
+            // Parse datetime_read if present
+            let datetime_read = datetime_read_str
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Local));
+            
+            let unread = unread_i64 != 0;
+            
+            out.push(Email {
+                from: from_addr,
+                subject,
+                unread,
+                datetime_received,
+                datetime_read,
+                body,
+            });
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
