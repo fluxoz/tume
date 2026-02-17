@@ -34,6 +34,17 @@ impl Default for App {
     }
 }
 
+impl App {
+    pub fn with_emails(emails: Vec<Email>) -> Self {
+        Self {
+            counter: 0,
+            exit: false,
+            inbox: Inbox::new(emails),
+            view: View::Inbox(false),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 enum View {
     Inbox(bool),
@@ -140,10 +151,30 @@ impl Widget for &mut App {
 }
 
 fn main() -> io::Result<()> {
-    // unlock encryption
-    // initialize turso
-
-    ratatui::run(|terminal| App::default().run(terminal))
+    use futures::executor::block_on;
+    
+    // Load emails from database
+    let emails = block_on(async {
+        match Db::open_local("tume.db").await {
+            Ok(db) => {
+                // Ensure schema is set up - if migration fails, we can't load emails
+                if db.migrate().await.is_err() {
+                    return vec![];
+                }
+                // Load emails from database
+                db.load_emails().await.unwrap_or_else(|_| vec![])
+            }
+            Err(_) => vec![]
+        }
+    });
+    
+    let mut app = if emails.is_empty() {
+        App::default()
+    } else {
+        App::with_emails(emails)
+    };
+    
+    ratatui::run(|terminal| app.run(terminal))
 }
 
 #[cfg(test)]
