@@ -27,11 +27,11 @@ impl Db {
                 r#"
                 create table if not exists emails (
                     id integer primary key,
-                    from text not null,
+                    from_addr text not null,
                     subject text not null,
                     body text not null,
                     datetime_received text not null,
-                    datetime_read text not null,
+                    datetime_read text,
                     unread integer not null
                 );
                 "#,
@@ -44,7 +44,10 @@ impl Db {
     pub async fn insert_email(&self, email: &Email) -> Result<(), libsql::Error> {
         let unread_i64 = if email.unread { 1 } else { 0 };
         self.conn
-            .execute("insert into emails (from_addr, subject, body, datetime_received,  unread) values (?1, ?2, ?3, ?4, ?6)", (email.from.clone(), email.subject.clone(), email.datetime_received.to_rfc3339(), email.unread))
+            .execute(
+                "insert into emails (from_addr, subject, body, datetime_received, unread) values (?1, ?2, ?3, ?4, ?5)",
+                (email.from.clone(), email.subject.clone(), email.body.clone(), email.datetime_received.to_rfc3339(), unread_i64)
+            )
             .await?;
         Ok(())
     }
