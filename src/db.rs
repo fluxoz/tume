@@ -43,10 +43,11 @@ impl Db {
 
     pub async fn insert_email(&self, email: &Email) -> Result<(), libsql::Error> {
         let unread_i64 = if email.unread { 1 } else { 0 };
+        let datetime_read = email.datetime_read.as_ref().map(|dt| dt.to_rfc3339());
         self.conn
             .execute(
-                "insert into emails (from_addr, subject, body, datetime_received, unread) values (?1, ?2, ?3, ?4, ?5)",
-                (email.from.clone(), email.subject.clone(), email.body.clone(), email.datetime_received.to_rfc3339(), unread_i64)
+                "insert into emails (from_addr, subject, body, datetime_received, datetime_read, unread) values (?1, ?2, ?3, ?4, ?5, ?6)",
+                (email.from.clone(), email.subject.clone(), email.body.clone(), email.datetime_received.to_rfc3339(), datetime_read, unread_i64)
             )
             .await?;
         Ok(())
