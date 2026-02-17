@@ -157,8 +157,10 @@ fn main() -> io::Result<()> {
     let emails = block_on(async {
         match Db::open_local("tume.db").await {
             Ok(db) => {
-                // Ensure schema is set up
-                let _ = db.migrate().await;
+                // Ensure schema is set up - if migration fails, we can't load emails
+                if db.migrate().await.is_err() {
+                    return vec![];
+                }
                 // Load emails from database
                 db.load_emails().await.unwrap_or_else(|_| vec![])
             }
